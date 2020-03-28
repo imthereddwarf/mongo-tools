@@ -17,13 +17,13 @@ NR == 1 {
     print outFile;
 }
 
-/^2019.* NETWORK / {
+/^2020.* NETWORK / {
     split($9,ip,":");
     key = ip[1] "-" $15 $17;
     Drivers[key]++;
 }
 
-/^2019.* COMMAND/ {
+/^2020.* COMMAND/ {
     # Merge any split lines back together
     if (!match($NF,/^[0-9]+ms$/)) {
 	longline = $0;
@@ -49,10 +49,11 @@ NR == 1 {
 #	if (nfound >= nlines) nextfile;
 #    }
 #    else next;
-    cpos = ipos = lpos = ppos = kpos = qpos = upos = prpos = npos = curpos = 0;
+    cpos = ipos = lpos = ppos = kpos = qpos = upos = prpos = npos = curpos = ocpos = spos = 0;
     for (i=7;i<NF;i++) {
 	if (substr($i,1,10) == "ninserted:") ipos = i;
 	if ($i == "planSummary:") ppos = i;
+	if ($i == "originatingCommand:") ocpos = i;
 	if ($i == "command:") cpos = i;
 	if ($i == "query:") qpos = i;
 	if ($i == "update:") upos = i;
@@ -61,8 +62,10 @@ NR == 1 {
 	if (substr($i,1,9) == "cursorid:") curpos = i;	
 	if (substr($i,1,13) == "keysExamined:") kpos = i;
 	if (substr($i,1,6) == "locks:") lpos = i;
+	if (substr($i,1,8) == "storage:") spos = i;
     }
     curStr = "";
+    storageStr="";
     if (operation == "insert") {
 	if (cpos && ipos && (ipos > cpos)) {
 	    cmdStr = $(cpos+1)
@@ -90,8 +93,42 @@ NR == 1 {
 	    updStr = $(upos+1)
 	    for (i=upos+2;i<kpos;i++) updStr = updStr " "$i;
 	    gsub(/'/,"\"",updStr);
+	    print updStr;
 	    gsub(/\\/,"\\\\",updStr);	   	    	    
 	}
+	if (kpos && lpos && (lpos > kpos)) {
+	    statStr = $(kpos)
+	    for (i=kpos+1;i<lpos;i++) statStr = statStr "," $i;
+	}
+    }
+     else if (operation == "getMore") {
+	if (cpos && ocpos && (ocpos > cpos)) {
+	    cmdStr = $(cpos+1)
+	    for (i=cpos+2;i<ocpos;i++) cmdStr = cmdStr " " $i;
+	    gsub(/'/,"\"",cmdStr);
+	    gsub(/\\/,"\\\\",cmdStr);	    	    
+	}
+        if (ppos && ocpos && (ppos > ocpos)) {
+	    oCmdStr = $(ocpos+1)
+	    for (i=ocpos+2;i<ppos;i++) oCmdStr = oCmdStr " " $i;
+	    gsub(/'/,"\"",oCmdStr);
+	    gsub(/\\/,"\\\\",oCmdStr);	    	    
+	}
+	if (curpos > 0) {
+	    if (ppos && (curpos > ppos)) {
+		planStr = $(ppos+1)
+		for (i=ppos+2;i<curpos;i++) planStr = planStr " "$i;
+	    }
+	    curStr = $curpos;
+	}
+	else {
+	    if (ppos && kpos && (kpos > ppos)) {
+		planStr = $(ppos+1)
+		for (i=ppos+2;i<kpos;i++) planStr = planStr " "$i;
+	    }
+	    curStr = "";
+	}
+ 
 	if (kpos && lpos && (lpos > kpos)) {
 	    statStr = $(kpos)
 	    for (i=kpos+1;i<lpos;i++) statStr = statStr "," $i;
@@ -124,7 +161,15 @@ NR == 1 {
 	    for (i=kpos+1;i<lpos;i++) statStr = statStr "," $i;
 	}
     }
-    if (lpos && prpos && (prpos > lpos)) {
+    if (lpos && spos && (spos > lpos)) { #storage in 4.x
+	lockStr = $(lpos);
+	for (i=lpos+1;i<spos;i++) lockStr = lockStr " " $i;
+	if (spos && prpos && (prpos > spos)) {
+	    storageStr = $(spos);
+	    for (i=spos+1;i<prpos;i++) storageStr = storageStr " " $i;
+	}
+    }    
+    else if (lpos && prpos && (prpos > lpos)) {
 	lockStr = $(lpos);
 	for (i=lpos+1;i<prpos;i++) lockStr = lockStr " " $i;
     }
@@ -147,19 +192,23 @@ NR == 1 {
     print "   Command: '" cmdStr "'," > outFile;
     if (operation != "insert")
 	print "   Plan: '" planStr "'," > outFile;
+    if (operation == "getMore")
+	print "   originatingCommand: '" oCmdStr "'," > outFile;
     if (match(curStr,/.*:[0-9]+/))
 	print "   " curStr "," > outFile;
     if (operation == "findAndModify")
 	print "   Update: '" updStr "'," > outFile;
     print "   Stats: {" statStr "}," > outFile;
     print "   " lockStr "," > outFile;
+    if (storageStr != "")
+	print "   " storageStr "," > outFile;
     print "   " protoStr "," > outFile;
     print "   Time: " time > outFile;
     print "}" > outFile;
     
 }
 
-/^2019.* WRITE/ {
+/^2020.* WRITE/ {
 # Merge any split lines back together
     if (!match($NF,/^[0-9]+ms$/)) {
 	longline = $0;
@@ -181,28 +230,30 @@ NR == 1 {
 #	if (nfound >= nlines) nextfile;
 #    }
 #    else next;
-    qpos = lpos = ppos = kpos = upos = 0;
+    qpos = lpos = ppos = kpos = upos = spos= 0;
     for (i=7;i<NF;i++) {
-	if ($i == "query:") qpos = i;
+	if ($i == "q:") qpos = i;
 	if ($i == "planSummary:") ppos = i;
-	if (substr($i,1,7) == "update:" && $(i+1) == "{") upos = i;
+	if (substr($i,1,7) == "u:" && $(i+1) == "{") upos = i;
 	if (substr($i,1,13) == "keysExamined:") kpos = i;
 	if (substr($i,1,6) == "locks:") lpos = i;
+	if (substr($i,1,8) == "storage:") spos = i;
     }
-    if (qpos && ppos && (ppos > qpos)) {
+    if (qpos && upos && (upos > qpos)) {
 	queryStr = $(qpos+1)
-	for (i=qpos+2;i<ppos;i++) queryStr = queryStr " " $i;
+	for (i=qpos+2;i<upos;i++) queryStr = queryStr " " $i;
 	gsub(/'/,"\"",queryStr);
 	gsub(/\\/,"\\\\",queryStr);	
     }
+    storageStr= "";
     if (operation == "update") {
-	if ( ppos && upos && (upos > ppos)) {
+	if ( ppos && kpos && (kpos > ppos)) {
 	    planStr = $(ppos+1)
 	    for (i=ppos+2;i<upos;i++) planStr = planStr " " $i;
 	}
-	if ( upos && kpos && (kpos > upos)) {
+	if ( upos && ppos && (ppos > upos)) {
 	    updStr = $(upos+1)
-	    for (i=upos+2;i<kpos;i++) updStr = updStr " " $i;
+	    for (i=upos+2;i<ppos;i++) updStr = updStr " " $i;
 	}
 	gsub(/'/,"\"",updStr);
 	gsub(/\\/,"\\\\",updStr);		
@@ -217,7 +268,13 @@ NR == 1 {
 	statStr = $(kpos)
 	for (i=kpos+1;i<lpos;i++) statStr = statStr "," $i;
     }
-    if (lpos) {
+    if (lpos && spos && (spos > lpos)) { #storage in 4.x
+	lockStr = $(lpos);
+	for (i=lpos+1;i<spos;i++) lockStr = lockStr " " $i;
+	storageStr = $(spos);
+	for (i=spos+1;i<NF;i++) storageStr = storageStr " " $i;
+    }    
+    else if (lpos) {
 	lockStr = $(lpos)
 	for (i=lpos+1;i<NF;i++) lockStr = lockStr " " $i;
     }
@@ -236,11 +293,13 @@ NR == 1 {
 	print "   Update: '" updStr "'," > outFile;
     print "   Stats: {" statStr "}," > outFile;
     print "   " lockStr "," > outFile;
+    if (storageStr != "")
+	print "   " storageStr "," > outFile;
     print "   Time: " time > outFile;
     print "}" > outFile;
 }
 
-/^2019.* REPL/ {
+/^2020.* I REPL / {
 # Merge any split lines back together
     if (!match($NF,/^[0-9]+ms$/)) {
 	longline = $0;
@@ -306,7 +365,7 @@ NR == 1 {
 	wallStr = $(wpos+1) " " $(wpos+2)
 
     if (o2pos && wpos && (wpos > o2pos)) {
-	o2Str = $(kpos)
+	o2Str = $(o2pos)
 	for (i=o2pos+1;i<wpos;i++) o2Str = o2Str "," $i;
     }
     if (opStr == "\"u\"," || opStr == "\"i\",") {
@@ -369,20 +428,185 @@ NR == 1 {
     }
 }
 
-END {
-    for (cmd in tcount) {
-	print cmd,tcount[cmd],ttime[cmd]/tcount[cmd];
+#
+# Syslog
+#
+/^[A-Za-z]{3} [0-9]{2} .* mongod\.[0-9]*\[.*\] command/ {
+
+# split the line into components
+    operation=$10
+    collection=$8
+    if (operation != "aggregate" && operation != "getMore" &&
+        operation != "findAndModify" && operation != "insert" &&
+        operation != "update" && operation != "remove" &&	
+        operation != "find" && operation != "count") next;    
+#    if (operation == "delete" || operation == "update") next;   #Get delete and update from WRITE
+#    if (got[$8]) {
+#	got[$8] = 0;
+#	nfound++;
+#	if (nfound >= nlines) nextfile;
+#    }
+#    else next;
+    cpos = ipos = lpos = ppos = kpos = qpos = upos = prpos = npos = curpos = ocpos = spos = 0;
+    for (i=9;i<NF;i++) {
+	if (substr($i,1,10) == "ninserted:") ipos = i;
+	if ($i == "planSummary:") ppos = i;
+	if ($i == "originatingCommand:") ocpos = i;
+	if ($i == "command:") cpos = i;
+	if ($i == "query:") qpos = i;
+	if ($i == "update:") upos = i;
+	if ($i == "new:") npos = i;
+	if (substr($i,1,9) == "protocol:") prpos = i;
+	if (substr($i,1,9) == "cursorid:") curpos = i;	
+	if (substr($i,1,13) == "keysExamined:") kpos = i;
+	if (substr($i,1,6) == "locks:") lpos = i;
+	if (substr($i,1,8) == "storage:") spos = i;
     }
-#    print "Clients"
-#    for (cmd in Drivers) {
-#	print cmd,Drivers[cmd];
-#    }
-#    for (pid in pidcount) {
-#	if (pidcount[pid] > 9) 
-#	    print pid,pidcount[pid]
-#    }
-#    for (flt in filterCount) {
-#	if (filterCount[flt] > 2) 
-#	print flt "," filterCount[flt], ",",filterTime[flt];
-#    }
+    curStr = "";
+    storageStr="";
+    if (operation == "insert") {
+	if (cpos && ipos && (ipos > cpos)) {
+	    cmdStr = $(cpos+1)
+	    for (i=cpos+2;i<ipos;i++) cmdStr = cmdStr " " $i;
+	    gsub(/'/,"\"",cmdStr);
+	    gsub(/\\/,"\\\\",cmdStr);	    
+	}
+	if ( ipos && lpos && (lpos > ipos)) {
+	    statStr = $(ipos)
+	    for (i=ipos+1;i<lpos;i++) statStr = statStr ", " $i;
+	}
+    }
+    else if (operation == "findAndModify") {
+	if (cpos && ppos && (ppos > cpos)) {
+	    cmdStr = $(cpos+1)
+	    for (i=cpos+2;i<ppos;i++) cmdStr = cmdStr " " $i;
+	    gsub(/'/,"\"",cmdStr);
+	    gsub(/\\/,"\\\\",cmdStr);	    
+	}
+	if (ppos && upos && (upos > ppos)) {
+	    planStr = $(ppos+1)
+	    for (i=ppos+2;i<upos;i++) planStr = planStr " "$i;
+	}
+ 	if (upos && kpos && (kpos > upos)) {
+	    updStr = $(upos+1)
+	    for (i=upos+2;i<kpos;i++) updStr = updStr " "$i;
+	    gsub(/'/,"\"",updStr);
+	    gsub(/\\/,"\\\\",updStr);	   	    	    
+	}
+	if (kpos && lpos && (lpos > kpos)) {
+	    statStr = $(kpos)
+	    for (i=kpos+1;i<lpos;i++) statStr = statStr "," $i;
+	}
+    }
+     else if (operation == "getMore") {
+	if (cpos && ocpos && (ocpos > cpos)) {
+	    cmdStr = $(cpos+1)
+	    for (i=cpos+2;i<ocpos;i++) cmdStr = cmdStr " " $i;
+	    gsub(/'/,"\"",cmdStr);
+	    gsub(/\\/,"\\\\",cmdStr);	    	    
+	}
+        if (ppos && ocpos && (ppos > ocpos)) {
+	    oCmdStr = $(ocpos+1)
+	    for (i=ocpos+2;i<ppos;i++) oCmdStr = oCmdStr " " $i;
+	    gsub(/'/,"\"",cmdStr);
+	    gsub(/\\/,"\\\\",cmdStr);	    	    
+	}
+	if (curpos > 0) {
+	    if (ppos && (curpos > ppos)) {
+		planStr = $(ppos+1)
+		for (i=ppos+2;i<curpos;i++) planStr = planStr " "$i;
+	    }
+	    curStr = $curpos;
+	}
+	else {
+	    if (ppos && kpos && (kpos > ppos)) {
+		planStr = $(ppos+1)
+		for (i=ppos+2;i<kpos;i++) planStr = planStr " "$i;
+	    }
+	    curStr = "";
+	}
+ 
+	if (kpos && lpos && (lpos > kpos)) {
+	    statStr = $(kpos)
+	    for (i=kpos+1;i<lpos;i++) statStr = statStr "," $i;
+	}
+    }
+    else {
+	if (cpos && ppos && (ppos > cpos)) {
+	    cmdStr = $(cpos+1)
+	    for (i=cpos+2;i<ppos;i++) cmdStr = cmdStr " " $i;
+	    gsub(/'/,"\"",cmdStr);
+	    gsub(/\\/,"\\\\",cmdStr);	    	    
+	}
+	if (curpos > 0) {
+	    if (ppos && (curpos > ppos)) {
+		planStr = $(ppos+1)
+		for (i=ppos+2;i<curpos;i++) planStr = planStr " "$i;
+	    }
+	    curStr = $curpos;
+	}
+	else {
+	    if (ppos && kpos && (kpos > ppos)) {
+		planStr = $(ppos+1)
+		for (i=ppos+2;i<kpos;i++) planStr = planStr " "$i;
+	    }
+	    curStr = "";
+	}
+ 
+	if (kpos && lpos && (lpos > kpos)) {
+	    statStr = $(kpos)
+	    for (i=kpos+1;i<lpos;i++) statStr = statStr "," $i;
+	}
+    }
+    if (lpos && spos && (spos > lpos)) { #storage in 4.x
+	lockStr = $(lpos);
+	for (i=lpos+1;i<spos;i++) lockStr = lockStr " " $i;
+	if (spos && prpos && (prpos > spos)) {
+	    storageStr = $(spos);
+	    for (i=spos+1;i<prpos;i++) storageStr = storageStr " " $i;
+	}
+    }    
+    else if (lpos && prpos && (prpos > lpos)) {
+	lockStr = $(lpos);
+	for (i=lpos+1;i<prpos;i++) lockStr = lockStr " " $i;
+    }
+    if (prpos) {
+	protoStr = $(prpos);
+	for (i=prpos+1;i<NF;i++) protoStr = protoStr " " $i;
+	i = sub(/:/,":'",protoStr)
+	protoStr = protoStr "'";
+    }
+    
+    time = $NF;
+    sub(/ms/,"",time);
+    
+    print "{" > outFile;
+    print "   File: '" FILENAME "'," > outFile;
+    print "   ts: ISODate(\"2000-03-" $2 "T" $3 ".000Z\")," > outFile;
+    print "   conn: '" $6 "'," >outFile;
+    print "   Operation: \"" operation "\"," > outFile;
+    print "   Collection: \"" collection "\"," > outFile;
+    print "   Command: '" cmdStr "'," > outFile;
+    if (operation != "insert")
+	print "   Plan: '" planStr "'," > outFile;
+    if (operation == "getMore")
+	print "   originatingCommand: '" oCmdStr "'," > outFile;
+    if (match(curStr,/.*:[0-9]+/))
+	print "   " curStr "," > outFile;
+    if (operation == "findAndModify")
+	print "   Update: '" updStr "'," > outFile;
+    print "   Stats: {" statStr "}," > outFile;
+    print "   " lockStr "," > outFile;
+    if (storageStr != "")
+	print "   " storageStr "," > outFile;
+    print "   " protoStr "," > outFile;
+    print "   Time: " time > outFile;
+    print "}" > outFile;
+    
+}
+
+
+END {
+    
+print "Done."
 }
