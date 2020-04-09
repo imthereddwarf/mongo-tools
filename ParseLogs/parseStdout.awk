@@ -93,7 +93,6 @@ NR == 1 {
 	    updStr = $(upos+1)
 	    for (i=upos+2;i<kpos;i++) updStr = updStr " "$i;
 	    gsub(/'/,"\"",updStr);
-	    print updStr;
 	    gsub(/\\/,"\\\\",updStr);	   	    	    
 	}
 	if (kpos && lpos && (lpos > kpos)) {
@@ -111,6 +110,8 @@ NR == 1 {
         if (ppos && ocpos && (ppos > ocpos)) {
 	    oCmdStr = $(ocpos+1)
 	    for (i=ocpos+2;i<ppos;i++) oCmdStr = oCmdStr " " $i;
+#	    if (length(oCmdStr) > 1024)
+#		oCmdStr = substr(oCmdStr1,1024);
 	    gsub(/'/,"\"",oCmdStr);
 	    gsub(/\\/,"\\\\",oCmdStr);	    	    
 	}
@@ -182,7 +183,7 @@ NR == 1 {
     
     time = $NF;
     sub(/ms/,"",time);
- 
+
     print "{" > outFile;
     print "   File: '" FILENAME "'," > outFile;
     print "   ts: ISODate(\"" $1 "\")," > outFile;
@@ -233,19 +234,32 @@ NR == 1 {
     qpos = lpos = ppos = kpos = upos = spos= 0;
     for (i=7;i<NF;i++) {
 	if ($i == "q:") qpos = i;
+	if ($i == "query:" && qpos == 0) qpos = i;
 	if ($i == "planSummary:") ppos = i;
 	if (substr($i,1,7) == "u:" && $(i+1) == "{") upos = i;
+	if ($i == "update:" && ipos == 0) upos = i;
 	if (substr($i,1,13) == "keysExamined:") kpos = i;
 	if (substr($i,1,6) == "locks:") lpos = i;
 	if (substr($i,1,8) == "storage:") spos = i;
     }
-    if (qpos && upos && (upos > qpos)) {
-	queryStr = $(qpos+1)
-	for (i=qpos+2;i<upos;i++) queryStr = queryStr " " $i;
-	gsub(/'/,"\"",queryStr);
-	gsub(/\\/,"\\\\",queryStr);	
+    # 3.4
+    storageStr = "";
+    if (upos > ppos) {
+	if (qpos && ppos && (ppos > qpos)) {
+	    queryStr = $(qpos+1)
+	    for (i=qpos+2;i<ppos;i++) queryStr = queryStr " " $i;
+	    gsub(/'/,"\"",queryStr);
+	    gsub(/\\/,"\\\\",queryStr);	
+	}
     }
-    storageStr= "";
+    else {
+	if (qpos && upos && (upos > qpos)) {
+	    queryStr = $(qpos+1)
+	    for (i=qpos+2;i<upos;i++) queryStr = queryStr " " $i;
+	    gsub(/'/,"\"",queryStr);
+	    gsub(/\\/,"\\\\",queryStr);	
+	}
+    }
     if (operation == "update") {
 	if ( ppos && kpos && (kpos > ppos)) {
 	    planStr = $(ppos+1)
@@ -378,6 +392,7 @@ NR == 1 {
     }
 	
     time = $NF
+    if (opStr == "") next;
     sub(/ms/,"",time);
     print "{" > outFile;
     print "   File: '" FILENAME "'," > outFile;
