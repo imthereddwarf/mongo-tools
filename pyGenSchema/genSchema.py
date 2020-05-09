@@ -145,6 +145,9 @@ class readSchema:
                 valdef.fRequired.append(fld.fName)
             if fld.descVar.get() != "":
                 props["description"] = fld.descVar.get()
+            if fld.typVar.get() == "Array":
+                props = self.buildSchema(fld)
+                props["bsonType"] = "array"
             if fld.typVar.get() == "Object":
                 props["properties"] = self.buildSchema(fld)
                 if len(fld.fRequired) > 0:
@@ -177,13 +180,17 @@ class readSchema:
         e.grid(column=1,row=0) 
         e.config(highlightbackground = "cyan")   
         Label(myFrame, text="ValidationLevel",bg="cyan").grid(column=2, row=0)
-        OptionMenu(myFrame,self.schLevel, *self.valLevels).grid(column=3, sticky=EW, row=0)
+        e = OptionMenu(myFrame,self.schLevel, *self.valLevels)
+        e.grid(column=3, sticky=EW, row=0)
+        e.config(highlightbackground = "cyan")  
         Label(myFrame, text="Description", bg="cyan").grid(column=0, row=1)
         e = Entry(myFrame, width=80, textvariable = self.top.descVar, bg='light cyan')
         e.grid(column=1, row=1)
         e.config(highlightbackground = "cyan")   
         Label(myFrame, text="ValidationAction",bg="cyan").grid(column=2, row=1)
-        OptionMenu(myFrame,self.schAction, *self.valActions).grid(column=3, sticky=EW, row=1)
+        e = OptionMenu(myFrame,self.schAction, *self.valActions)
+        e.grid(column=3, sticky=EW, row=1)
+        e.config(highlightbackground = "cyan")  
         
         myFrame = Frame(self.importFrame.interior, bg="mint cream")
         myFrame.pack(fill=X)
@@ -209,9 +216,19 @@ class readSchema:
         print(level,parent.fName)        
         for fRow in objectDef:
             print(fRow)
-            print(objectDef[fRow]["bsonType"])
-            myType = self.bsonLookup[objectDef[fRow]["bsonType"]]
-            item = validatorDef(fRow,myType,parent)
+            print(objectDef[fRow])
+            if fRow == 'bsonType':  #Scalar Array
+                myType = self.bsonLookup[objectDef[fRow]]
+                item = validatorDef("items",myType,parent)
+                labelText=  "[ ]"
+            elif fRow == 'properties':  #Document Array
+                myType = "Object"
+                item = validatorDef("items",myType,parent)
+                labelText=  "[ ]"
+            else:
+                myType = self.bsonLookup[objectDef[fRow]["bsonType"]]
+                item = validatorDef(fRow,myType,parent)
+                labelText=  fRow+" ("+objectDef[fRow]["bsonType"]+")"
             if "description" in objectDef[fRow]:
                 item.descVar.set(objectDef[fRow]["description"])
             if fRow in parent.fRequired:
@@ -223,7 +240,8 @@ class readSchema:
             else:
                 rowColor = 'mint cream'
             print(fRow)
-            labelText=  fRow+" ("+objectDef[fRow]["bsonType"]+")"
+            print(myType)
+            
             if (level > 1):
                 indent = 3*(level-1)
                 Label(self.myFrame, text="", width=indent, anchor=W, bg=rowColor).grid(column=0,columnspan=level-1, sticky=W, row =self.currentRow)
@@ -234,8 +252,16 @@ class readSchema:
             Checkbutton(self.myFrame,var=item.reqVar, width=4).grid(column=11, sticky=W, row =self.currentRow)
             Entry(self.myFrame, textvariable=item.descVar, width=80).grid(column=12, sticky=W, row =self.currentRow)
             self.currentRow += 1
+            print(myType)
             if myType == "Object":
-                self.processObject(fRow,objectDef[fRow]["properties"],level+1,item)
+                print(fRow)
+                if fRow == "properties":
+                    self.processObject(fRow,objectDef["properties"],level+1,item)
+                    break
+                else:
+                    self.processObject(fRow,objectDef[fRow]["properties"],level+1,item)
+            if myType == "Array":
+                self.processObject(fRow,objectDef[fRow]["items"],level+1,item)
             print(name+": "+str(level))
 
 
@@ -258,6 +284,7 @@ class importFromCompass:
          
     def procDocument(self,level,schema,fieldsOut):
         for fld in schema:
+            print(fld)
             freq = fld["count"]
             indent = "-> " * (level-1)
             types = []
@@ -272,14 +299,17 @@ class importFromCompass:
             nameLen = len(indent+fldName)+7 # Include (100%) suffix
             if self.maxNameLen < nameLen:
                 self.maxNameLen = nameLen  
-            if fld["types"][0]["bsonType"] == "Array":
-                types.append(typeFrequency("Array",100))
-                subdoc = fld["types"]
+            if ("types" in fld):
+                if (fld["types"][0]["name"] == "Array"):
+                    types.append(typeFrequency("Array",100))
+                    subdoc = fld["types"]
+                else:
+                    for typ in fld["types"]:
+                        types.append(typeFrequency(typ["name"],typ["count"]*100/freq))
+                        if typ["name"] == "Document":
+                            subdoc = typ["fields"]
             else:
-                for typ in fld["types"]:
-                    types.append(typeFrequency(typ["bsonType"],typ["count"]*100/freq))
-                    if typ["bsonType"] == "Document":
-                        subdoc = typ["fields"]
+                types.append(typeFrequency("Undefined",fld["count"]*100/freq))
             fieldsOut.append(schemaField(fldName,level,types,fld["probability"],isUnique))
             if subdoc is not None:
                 self.procDocument(level+1,subdoc,fieldsOut)
@@ -338,15 +368,11 @@ class importFromCompass:
         for field in self.fields:
             if field.level < self.procLevel: # End of sub document
                 for i in range(self.procLevel,field.level,-1):
-                    print(self.schema[i-1])
                     if self.fieldType[i-1] == "Array":
                         self.schema[i]["bsonType"] = "array"
                         self.schema[i-1][self.currentField[i-1]] = self.schema[i]
                     else:
                         self.schema[i-1][self.currentField[i-1]] = {"bsonType" : "object", "properties": self.schema[i]}
-                    print(i,self.schema[i],self.fieldType)
-                    print(self.currentField)
-                    print(self.schema[i-1])
                     self.schema.pop(i)
                     self.currentField.pop(i-1)
                     self.fieldType.pop(i-1)
