@@ -262,18 +262,24 @@ class importFromCompass:
             indent = "-> " * (level-1)
             types = []
             subdoc = None
-        
-            isUnique = fld["has_duplicates"]  #save here because an array doesn't have this property
+            if "has_duplicates" in fld:
+                isUnique = fld["has_duplicates"]  #save here because an array doesn't have this property
+            else:
+                isUnique = False
             fldName = fld["name"]
+            if fldName == "Array":
+                fldName = "items"
             nameLen = len(indent+fldName)+7 # Include (100%) suffix
             if self.maxNameLen < nameLen:
                 self.maxNameLen = nameLen  
-            if fld["types"][0]["name"] == "Array":
-                fld = fld["types"][0]
-            for typ in fld["types"]:
-                types.append(typeFrequency(typ["bsonType"],typ["count"]*100/freq))
-                if typ["bsonType"] == "Document":
-                    subdoc = typ["fields"]
+            if fld["types"][0]["bsonType"] == "Array":
+                types.append(typeFrequency("Array",100))
+                subdoc = fld["types"]
+            else:
+                for typ in fld["types"]:
+                    types.append(typeFrequency(typ["bsonType"],typ["count"]*100/freq))
+                    if typ["bsonType"] == "Document":
+                        subdoc = typ["fields"]
             fieldsOut.append(schemaField(fldName,level,types,fld["probability"],isUnique))
             if subdoc is not None:
                 self.procDocument(level+1,subdoc,fieldsOut)
@@ -294,7 +300,10 @@ class importFromCompass:
             print(fRow.name,not bool(fRow.unique))
             myFrame = Frame(self.importFrame, bg=rowColor)
             myFrame.pack(fill=X)
-            labelText=  fRow.name+" ("+str(fRow.percent)+"%)"
+            if fRow.name == 'items':
+                labelText = '['
+            else:
+                labelText=  fRow.name+" ("+str(fRow.percent)+"%)"
             if (fRow.level > 1):
                 indent = 3*(fRow.level-1)
                 Label(myFrame, text="", width=indent, anchor=W, bg=rowColor).grid(column=0,columnspan=fRow.level-1, sticky=W, row =0)
@@ -324,20 +333,31 @@ class importFromCompass:
         self.schema= [{"title": "Auto Generated Schema", "description": "Fill this here", "bsonType": "object"}, {}]
         self.procLevel = 1
         self.currentField = ["$jsonSchema"]
+        self.fieldType = ["schema"]
         self.header = {"validator": {"$jsonSchema": {}},"validationLevel": "moderate", "validationAction": "warn"}
         for field in self.fields:
             if field.level < self.procLevel: # End of sub document
                 for i in range(self.procLevel,field.level,-1):
-                    self.schema[i-1][self.currentField[i-1]] = {"bsonType" : "object", "properties": self.schema[i]}
+                    print(self.schema[i-1])
+                    if self.fieldType[i-1] == "Array":
+                        self.schema[i]["bsonType"] = "array"
+                        self.schema[i-1][self.currentField[i-1]] = self.schema[i]
+                    else:
+                        self.schema[i-1][self.currentField[i-1]] = {"bsonType" : "object", "properties": self.schema[i]}
+                    print(i,self.schema[i],self.fieldType)
+                    print(self.currentField)
+                    print(self.schema[i-1])
                     self.schema.pop(i)
                     self.currentField.pop(i-1)
+                    self.fieldType.pop(i-1)
                 self.procLevel = field.level
             if field.level == self.procLevel: #field at our current level
                 print(field.name,field.gridVar.get())
                 if field.gridVar.get() > 0:
                     myType = field.types[field.gridVar.get()-1].type
-                    if (myType == "Document"):  #include the sub document
+                    if (myType == "Document" or myType == "Array"):  #include the sub document
                         self.currentField.append(field.name)
+                        self.fieldType.append(myType)
                         self.schema.append({})
                         self.procLevel += 1;
                     else:
@@ -348,7 +368,7 @@ class importFromCompass:
                 self.schema[i-1][self.currentField[i-1]] = {"bsonType" : "object", "properties": self.schema[i]}
         self.schema[0]["properties"] = self.schema[1]
         self.header["validator"]["$jsonSchema"] = self.schema[0]
-        self.json = json.dumps(self.header)
+        self.json = json.dumps(self.header,indent=2)
         self.f.write(self.json)
         self.f.close()
         self.importFrame.destroy()
