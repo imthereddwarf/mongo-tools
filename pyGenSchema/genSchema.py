@@ -318,7 +318,7 @@ class importFromCompass:
         schemaDef = self.master.clipboard_get()
         schemaDesc = loads(schemaDef)
         self.procDocument(1, schemaDesc["fields"], self.fields)
-        self.importFrame = Frame(self.master)
+        self.importFrame = VerticalScrolledFrame(self.master)
         self.importFrame.pack(fill=X)
         
         currentRow = 1
@@ -328,7 +328,7 @@ class importFromCompass:
             else:
                 rowColor = 'mint cream'
             print(fRow.name,not bool(fRow.unique))
-            myFrame = Frame(self.importFrame, bg=rowColor)
+            myFrame = Frame(self.importFrame.interior, bg=rowColor)
             myFrame.pack(fill=X)
             if fRow.name == 'items':
                 labelText = '['
@@ -353,7 +353,7 @@ class importFromCompass:
             rowColor = "light cyan"
         else:
             rowColor = 'mint cream'
-        myFrame = Frame(self.importFrame, bg=rowColor)
+        myFrame = Frame(self.importFrame.interior, bg=rowColor)
         myFrame.pack(fill=X)
         self.doneButton = Button(myFrame, text="Generate", width=25, command=self.doExport)
         self.doneButton.pack()
