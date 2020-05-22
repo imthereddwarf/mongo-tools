@@ -1,11 +1,16 @@
 
-from tkinter import *
+try:
+    import tkinter as tk
+    import tkinter.scrolledtext as tkst
+    import tkinter.filedialog as fd
+    import tkinter.messagebox as mb
+except:
+    print("tkinter is required, please install.")
+
  
-from tkinter import scrolledtext
+
 from bson.json_util import loads
 import json
-import tkFileDialog
-import tkMessageBox
 import sys
 
 
@@ -16,7 +21,7 @@ class schemaField:
         self.types = fieldTypes
         self.unique = isUnique
         self.percent = frequency*100
-        self.gridVar = IntVar()
+        self.gridVar = tk.IntVar()
         
 class typeFrequency:
     def __init__(self,type,percentage):
@@ -30,13 +35,14 @@ class validatorDef:
         self.fRequired = []
         self.parent = parent
         self.children = []
+        
         self.desc = ""
-        self.typVar = StringVar()
-        self.reqVar = IntVar()
-        self.descVar = StringVar()
+        self.typVar = tk.StringVar()
+        self.reqVar = tk.IntVar()
+        self.descVar = tk.StringVar()
         self.typVar.set(fType)
 
-class VerticalScrolledFrame(Frame):
+class VerticalScrolledFrame(tk.Frame):
     """A pure Tkinter scrollable frame that actually works!
     * Use the 'interior' attribute to place widgets inside the scrollable frame
     * Construct and pack/place/grid normally
@@ -44,14 +50,14 @@ class VerticalScrolledFrame(Frame):
 
     """
     def __init__(self, parent, *args, **kw):
-        Frame.__init__(self, parent, *args, **kw)            
+        tk.Frame.__init__(self, parent, *args, **kw)            
 
         # create a canvas object and a vertical scrollbar for scrolling it
-        vscrollbar = Scrollbar(self, orient=VERTICAL)
-        vscrollbar.pack(fill=Y, side=RIGHT, expand=FALSE)
-        canvas = Canvas(self, bd=0, height=1000, highlightthickness=0,
+        vscrollbar = tk.Scrollbar(self, orient=tk.VERTICAL)
+        vscrollbar.pack(fill=tk.Y, side=tk.RIGHT, expand=tk.FALSE)
+        canvas = tk.Canvas(self, bd=0, height=1000, highlightthickness=0,
                         yscrollcommand=vscrollbar.set)
-        canvas.pack(side=LEFT, fill=BOTH, expand=TRUE)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=tk.TRUE)
         vscrollbar.config(command=canvas.yview)
 
         # reset the view
@@ -59,9 +65,9 @@ class VerticalScrolledFrame(Frame):
         canvas.yview_moveto(0)
 
         # create a frame inside the canvas which will be scrolled with it
-        self.interior = interior = Frame(canvas)
+        self.interior = interior = tk.Frame(canvas)
         interior_id = canvas.create_window(0, 0, window=interior,
-                                           anchor=NW)
+                                           anchor=tk.NW)
 
         # track changes to the canvas and frame width and sync them,
         # also updating the scrollbar
@@ -97,7 +103,7 @@ class readSchema:
         self.levelLookup = {v: k for k, v in self.valLevels.items()}
         self.actionLookup = {v: k for k, v in self.valActions.items()}
         self.master = master
-        self.frame = Frame(self.master, bg='red')
+        self.frame = tk.Frame(self.master, bg='red')
         self.frame.pack()
         self.fields = []    
         self.maxNameLen = 0
@@ -105,7 +111,7 @@ class readSchema:
         self.top = {}
         
     def doImport(self):
-        self.filename = tkFileDialog.askopenfilename(initialdir = "~", title="Select Schema definition")
+        self.filename = tk.filedialog.askopenfilename(initialdir = "~", title="Select Schema definition")
         print (self.filename)
         with open(self.filename, "r") as sfile:
             data = sfile.read()
@@ -118,12 +124,12 @@ class readSchema:
             if "$jsonSchema" in schemaDesc["validator"]:    
                 self.editSchema(schemaDesc)
             else:
-                tkMessageBox.showwarning("Import Schema", self.filename+" does not contain a JSON Schema.")
+                tk.messagebox.showwarning("Import Schema", self.filename+" does not contain a JSON Schema.")
         else:
-            tkMessageBox.showwarning("Import Schema", self.filename+" does not contain a schema validator.")
+            tk.messagebox.showwarning("Import Schema", self.filename+" does not contain a schema validator.")
             
     def doExport(self):
-        self.f= tkFileDialog.asksaveasfile(mode="w", initialdir = "~", title="Select file")
+        self.f= tk.filedialog.asksaveasfile(mode="w", initialdir = "~", title="Select file")
         self.proclevel = 1
         self.schema= {"title": self.schTitle.get(), "description": self.top.descVar.get(), "bsonType": "object", "properties": self.buildSchema(self.top)}
         if len(self.top.fRequired) > 0:
@@ -158,10 +164,10 @@ class readSchema:
     def editSchema(self,schemaDef):
         self.schema = schemaDef["validator"]["$jsonSchema"]
         self.importFrame = VerticalScrolledFrame(self.master)
-        self.importFrame.pack(fill=X)
-        self.schTitle = StringVar()
-        self.schLevel = StringVar()
-        self.schAction = StringVar()
+        self.importFrame.pack(fill=tk.X)
+        self.schTitle = tk.StringVar()
+        self.schLevel = tk.StringVar()
+        self.schAction = tk.StringVar()
         if "validationLevel" in schemaDef:
             self.schLevel.set(self.levelLookup[schemaDef["validationLevel"]])
         if "validationAction" in schemaDef:
@@ -172,42 +178,42 @@ class readSchema:
         self.schTitle.set(self.schema["title"])
         self.top.descVar.set(self.schema["description"])
         
-        myFrame = Frame(self.importFrame.interior, bg="cyan")
-        myFrame.pack(fill=X)
+        myFrame = tk.Frame(self.importFrame.interior, bg="cyan")
+        myFrame.pack(fill=tk.X)
         
-        Label(myFrame, text="Title", bg="cyan").grid(column=0, row=0)
-        e = Entry(myFrame, width=80, textvariable = self.schTitle, bg='light cyan')
+        tk.Label(myFrame, text="Title", bg="cyan").grid(column=0, row=0)
+        e = tk.Entry(myFrame, width=80, textvariable = self.schTitle, bg='light cyan')
         e.grid(column=1,row=0) 
         e.config(highlightbackground = "cyan")   
-        Label(myFrame, text="ValidationLevel",bg="cyan").grid(column=2, row=0)
-        e = OptionMenu(myFrame,self.schLevel, *self.valLevels)
-        e.grid(column=3, sticky=EW, row=0)
+        tk.Label(myFrame, text="ValidationLevel",bg="cyan").grid(column=2, row=0)
+        e = tk.OptionMenu(myFrame,self.schLevel, *self.valLevels)
+        e.grid(column=3, sticky=tk.EW, row=0)
         e.config(highlightbackground = "cyan")  
-        Label(myFrame, text="Description", bg="cyan").grid(column=0, row=1)
-        e = Entry(myFrame, width=80, textvariable = self.top.descVar, bg='light cyan')
+        tk.Label(myFrame, text="Description", bg="cyan").grid(column=0, row=1)
+        e = tk.Entry(myFrame, width=80, textvariable = self.top.descVar, bg='light cyan')
         e.grid(column=1, row=1)
         e.config(highlightbackground = "cyan")   
-        Label(myFrame, text="ValidationAction",bg="cyan").grid(column=2, row=1)
-        e = OptionMenu(myFrame,self.schAction, *self.valActions)
-        e.grid(column=3, sticky=EW, row=1)
+        tk.Label(myFrame, text="ValidationAction",bg="cyan").grid(column=2, row=1)
+        e = tk.OptionMenu(myFrame,self.schAction, *self.valActions)
+        e.grid(column=3, sticky=tk.EW, row=1)
         e.config(highlightbackground = "cyan")  
         
-        myFrame = Frame(self.importFrame.interior, bg="mint cream")
-        myFrame.pack(fill=X)
+        myFrame = tk.Frame(self.importFrame.interior, bg="mint cream")
+        myFrame.pack(fill=tk.X)
 
-        Label(myFrame, text="Field Name", bg="mint cream",anchor=W).grid(column=0, row=0, columnspan=9, sticky=W)
-        Label(myFrame, text="Type",width=25,bg="mint cream",anchor=W).grid(column=10, row=0)
-        Label(myFrame, text="Req", width=4, bg="mint cream",anchor=W).grid(column=11, row=0)
-        Label(myFrame, text="Description", bg="mint cream",anchor=W).grid(column=12, row=0, sticky=W)
+        tk.Label(myFrame, text="Field Name", bg="mint cream",anchor=tk.W).grid(column=0, row=0, columnspan=9, sticky=tk.W)
+        tk.Label(myFrame, text="Type",width=25,bg="mint cream",anchor=tk.W).grid(column=10, row=0)
+        tk.Label(myFrame, text="Req", width=4, bg="mint cream",anchor=tk.W).grid(column=11, row=0)
+        tk.Label(myFrame, text="Description", bg="mint cream",anchor=tk.W).grid(column=12, row=0, sticky=tk.W)
 
         self.currentRow = 1
         self.myFrame = myFrame
 
         self.processObject("$jsonSchema",self.schema["properties"],1,self.top)
         
-        myFrame = Frame(self.importFrame.interior, bg="cyan")
-        myFrame.pack(fill=X)
-        self.doneButton = Button(myFrame, text="Save", width=25, command=self.doExport)
+        myFrame = tk.Frame(self.importFrame.interior, bg="cyan")
+        myFrame.pack(fill=tk.X)
+        self.doneButton = tk.Button(myFrame, text="Save", width=25, command=self.doExport)
         self.doneButton.pack()
 
 
@@ -244,13 +250,13 @@ class readSchema:
             
             if (level > 1):
                 indent = 3*(level-1)
-                Label(self.myFrame, text="", width=indent, anchor=W, bg=rowColor).grid(column=0,columnspan=level-1, sticky=W, row =self.currentRow)
+                tk.Label(self.myFrame, text="", width=indent, anchor=tk.W, bg=rowColor).grid(column=0,columnspan=level-1, sticky=tk.W, row =self.currentRow)
             else:
                 indent = 0
-            Label(self.myFrame, text=labelText, anchor=W, width=25-indent, bg=rowColor).grid(column=level-1,columnspan=9-level, sticky=W, row =self.currentRow)
-            OptionMenu(self.myFrame,item.typVar, *self.bsonTypeMap).grid(column=10, sticky=EW, row=self.currentRow)
-            Checkbutton(self.myFrame,var=item.reqVar, width=4).grid(column=11, sticky=W, row =self.currentRow)
-            Entry(self.myFrame, textvariable=item.descVar, width=80).grid(column=12, sticky=W, row =self.currentRow)
+            tk.Label(self.myFrame, text=labelText, anchor=tk.W, width=25-indent, bg=rowColor).grid(column=level-1,columnspan=9-level, sticky=tk.W, row =self.currentRow)
+            tk.OptionMenu(self.myFrame,item.typVar, *self.bsonTypeMap).grid(column=10, sticky=tk.EW, row=self.currentRow)
+            tk.Checkbutton(self.myFrame,var=item.reqVar, width=4).grid(column=11, sticky=tk.W, row =self.currentRow)
+            tk.Entry(self.myFrame, textvariable=item.descVar, width=80).grid(column=12, sticky=tk.W, row =self.currentRow)
             self.currentRow += 1
             print(myType)
             if myType == "Object":
@@ -277,7 +283,7 @@ class importFromCompass:
                 "JavaScript": "javascriptWithScope", "Int32": "int", "Timestamp": "timestamp", "Long": "long", \
                 "Decimal128": "decimal" }
         self.master = master
-        self.frame = Frame(self.master, bg='red')
+        self.frame = tk.Frame(self.master, bg='red')
         self.frame.pack()
         self.fields = []    
         self.maxNameLen = 0
@@ -319,7 +325,7 @@ class importFromCompass:
         schemaDesc = loads(schemaDef)
         self.procDocument(1, schemaDesc["fields"], self.fields)
         self.importFrame = VerticalScrolledFrame(self.master)
-        self.importFrame.pack(fill=X)
+        self.importFrame.pack(fill=tk.X)
         
         currentRow = 1
         for fRow in self.fields:
@@ -328,24 +334,24 @@ class importFromCompass:
             else:
                 rowColor = 'mint cream'
             print(fRow.name,not bool(fRow.unique))
-            myFrame = Frame(self.importFrame.interior, bg=rowColor)
-            myFrame.pack(fill=X)
+            myFrame = tk.Frame(self.importFrame.interior, bg=rowColor)
+            myFrame.pack(fill=tk.X)
             if fRow.name == 'items':
                 labelText = '['
             else:
                 labelText=  fRow.name+" ("+str(fRow.percent)+"%)"
             if (fRow.level > 1):
                 indent = 3*(fRow.level-1)
-                Label(myFrame, text="", width=indent, anchor=W, bg=rowColor).grid(column=0,columnspan=fRow.level-1, sticky=W, row =0)
+                tk.Label(myFrame, text="", width=indent, anchor=tk.W, bg=rowColor).grid(column=0,columnspan=fRow.level-1, sticky=tk.W, row =0)
             else:
                 indent = 0
-            Label(myFrame, text=labelText, anchor=W, width=self.maxNameLen-indent, bg=rowColor).grid(column=fRow.level-1,columnspan=10-fRow.level, sticky=W, row =0)
+            tk.Label(myFrame, text=labelText, anchor=tk.W, width=self.maxNameLen-indent, bg=rowColor).grid(column=fRow.level-1,columnspan=10-fRow.level, sticky=tk.W, row =0)
             currentCol = 11
             buttonId = 1
-            Radiobutton(myFrame, variable=fRow.gridVar, bg=rowColor, text="Ignore", value=0).grid(column=currentCol,row=0,sticky=W)
+            tk.Radiobutton(myFrame, variable=fRow.gridVar, bg=rowColor, text="Ignore", value=0).grid(column=currentCol,row=0,sticky=tk.W)
             currentCol += 1;
             for typ in fRow.types:
-                Radiobutton(myFrame, variable=fRow.gridVar, bg=rowColor, text=typ.type+"("+str(typ.percent)+"%)", value=buttonId).grid(column=currentCol,row=0,sticky=W)
+                tk.Radiobutton(myFrame, variable=fRow.gridVar, bg=rowColor, text=typ.type+"("+str(typ.percent)+"%)", value=buttonId).grid(column=currentCol,row=0,sticky=tk.W)
                 currentCol += 1
                 buttonId += 1
             currentRow += 1
@@ -353,13 +359,13 @@ class importFromCompass:
             rowColor = "light cyan"
         else:
             rowColor = 'mint cream'
-        myFrame = Frame(self.importFrame.interior, bg=rowColor)
-        myFrame.pack(fill=X)
-        self.doneButton = Button(myFrame, text="Generate", width=25, command=self.doExport)
+        myFrame = tk.Frame(self.importFrame.interior, bg=rowColor)
+        myFrame.pack(fill=tk.X)
+        self.doneButton = tk.Button(myFrame, text="Generate", width=25, command=self.doExport)
         self.doneButton.pack()
         
     def doExport(self):
-        self.f= tkFileDialog.asksaveasfile(mode="w", initialdir = "~", title="Select file")
+        self.f= tk.filedialog.asksaveasfile(mode="w", initialdir = "~", title="Select file")
         self.schema= [{"title": "Auto Generated Schema", "description": "Fill this here", "bsonType": "object"}, {}]
         self.procLevel = 1
         self.currentField = ["$jsonSchema"]
@@ -406,11 +412,13 @@ class chooseInputSource:
     def __init__(self,master):
         self.master = master     
         self.choice = 0
-        self.frame = Frame(self.master, bg="green")
-        self.button1 = Button(self.frame, text = "Paste", width = 25, command=self.setPaste )
-        self.button1.pack(side=LEFT)
-        self.button2 = Button(self.frame, text = "Read", width = 25, command=self.setFile )
-        self.button2.pack(side=LEFT)
+        self.frame = tk.Frame(self.master, bg="green")
+        self.button1 = tk.Button(self.frame, text = "Paste", width = 25, command=self.setPaste )
+        self.button1.pack(side=tk.LEFT)
+        self.button2 = tk.Button(self.frame, text = "Read", width = 25, command=self.setFile )
+        self.button2.pack(side=tk.LEFT)
+        self.button2 = tk.Button(self.frame, text = "Quit", width = 25, command=self.doQuit )
+        self.button2.pack(side=tk.LEFT)
         self.frame.pack()
         
     def setPaste(self):
@@ -423,13 +431,16 @@ class chooseInputSource:
         importApp = readSchema(self.master)
         importApp.doImport()
         
+    def doQuit(self):
+        quit();
+        
         
         
 
     
 def main():           
     print(sys.version)
-    window = Tk()
+    window = tk.Tk()
     window.title("MongoDB Schema Generator")
     window.geometry('1024x1024')    
 
