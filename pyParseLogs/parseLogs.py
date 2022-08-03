@@ -26,6 +26,7 @@ from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 from argparse import ArgumentTypeError
 import traceback
+from dns.rdataclass import NONE
 
 
 
@@ -91,7 +92,9 @@ cmdMessages = {"successfully": {"cmdType": "setParam", "newValue": 5, "oldValue"
                "mongos": {"cmdType": "mongos", "Value": "1-"}}
 
 filterLocations = {"update": "updates.q", "count": "query", "find": "filter", "aggregate": "pipeline", "delete": "deletes.q", 
-                    "findAndModify": "query", "command": "q"}
+                    "findAndModify": "query", "command": "q", "remove": "q"}
+
+
 
 updateLocations = {"command": "u", "update": "updates.u", "findAnModify": "update"}
 
@@ -332,6 +335,8 @@ def cleanJSON(input,startpos,myPath=""):
             if not inarray:
                 inkey = True
             continue;
+        if ( c== "."):
+            logger.logDebug(outstring)
         # Escape remember and con
         if c == '\\':
             isescape = True;
@@ -349,13 +354,13 @@ def cleanJSON(input,startpos,myPath=""):
             isescape = False
         # We're inside a string
         if instring != '\0':
-            if token[-10:] == "appMessage":
-                print(token[-10:])
+ #           if token[-10:] == "appMessage":
+ #               print(token[-10:])
             if saveAsString != 0:  # were saving JSON as a String
                 if (c == instring):
                     #print(token)
                     token += "\\"+ c   # escape the quotes
-                    print(token[-4:])
+ #                   print(token[-4:])
                     if token[-4:] == ": \\"+c:
                         stringValue = True 
                     else:
@@ -377,7 +382,7 @@ def cleanJSON(input,startpos,myPath=""):
                             logger.logDebug("mismatched quote before {}, line: {} ".format(input[i+3:i+9],input[:23]))
                             saveAsString = 0
                             token += '"'
-                            print(token)
+#                            print(token)
                             instring = '\0'
                     elif saveAsString == 1:                    # end of JSON
                         saveAsString = 0
@@ -386,8 +391,8 @@ def cleanJSON(input,startpos,myPath=""):
                     else:
                         token += c
                 elif (c < ' ') | (c > '~') : # unprintable
-                    print(hex(ord(c)))
-                    print("{0:#0{1}x}".format(ord(c),6))
+#                    print(hex(ord(c)))
+#                    print("{0:#0{1}x}".format(ord(c),6))
                     token += "{0:#0{1}x}".format(ord(c),6).replace("0x","\\u")
                 else:
                     token += c
@@ -395,8 +400,9 @@ def cleanJSON(input,startpos,myPath=""):
             elif c == instring:
                 instring = '\0';  # string closed
                 token += '"';
+                logger.logDebug(token)
             elif (c < ' ') | (c > '~') : # unprintable
-                print(hex(ord(c)))
+#                print(hex(ord(c)))
                 token += "{0:#0{1}x}".format(ord(c),6).replace("0x","\\u")
             else:
                 if isescape:
@@ -438,7 +444,7 @@ def cleanJSON(input,startpos,myPath=""):
                 token = "";
             # string starts with quote but is not closed
             elif ((token[:1] == '"') | (token[:1] == '\'')) :
-                print(token)
+#                print(token)
                 quotechar = token[:1];
                 if quotechar == '"':
                     notquote = '\'';
@@ -482,6 +488,7 @@ def cleanJSON(input,startpos,myPath=""):
                     inkey = True
         # no key found treet as junk or empty
         elif ((c == '}') |  (c == ']')) & inkey:
+            logger.logDebug(token)
             if token == "":
                 outstring += c
             else:
@@ -567,7 +574,7 @@ def parseLine(tok,j,jsonObj):
             j=j+1
     return outDoc
 
-def procLine(x,inpath,linecount):
+def procLine(x,inpath,linecount,shortName):
     
     level = 0
     position = 0
@@ -621,6 +628,9 @@ def procLine(x,inpath,linecount):
     newstr += x[copied:]
     tok = newstr.split()
     
+    d = datetime.datetime.strptime(tok[0][0:23], "%Y-%m-%dT%H:%M:%S.%f")
+    outDoc = { "type": tok[2], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName}
+
     
     if tok[2] == "NETWORK":
         outstr = "{ type: \"NETWORK\","
@@ -630,21 +640,20 @@ def procLine(x,inpath,linecount):
             outstr += 'ip_addr: "'+ipmatch.group(1)+'"}'
             #print(outstr)
         elif tok[4] == "end":
+            outDoc["Operation"] = "end"
             connMatch = connection.match(tok[3])
-            outstr += 'connection: "'+connMatch.group(1)+'",'
+            outDoc["connection"] = connMatch.group(1)
             ipmatch = ipport.match(tok[6])
-            outstr += 'ip_addr: "'+ipmatch.group(1)+'"}'   
-            #print(outstr)
+            outDoc["ip_addr:"] = ipmatch.group(1) 
+            return(outDoc)
         elif tok[4] == "received":
-            outDoc = { "type": tok[2], "infile": inpath, "lineno": linecount }
-            d = datetime.datetime.strptime(tok[0][0:23], "%Y-%m-%dT%H:%M:%S.%f")
-            outDoc["ts"] = d
+            outDoc["Operation"] = "start"
             connMatch = connection.match(tok[3])
             outDoc["connection"] = connMatch.group(1)
             ipmatch = ipport.match(tok[8])
             outDoc["ip_addr:"] = ipmatch.group(1) 
             outDoc["connection_info"] = jsonObj.getJsonVal(0)
-            #return(outDoc)
+            return(outDoc)
         return None
     elif tok[2] == "CONTROL":
         outstr = ""
@@ -652,9 +661,7 @@ def procLine(x,inpath,linecount):
         #    outstr = "{ type: \"CONTROL\", version: \""+tok[6]+"\"}"
         return None
     elif tok[2] == "REPL":
-        outDoc = { "type": tok[2], "infile": inpath, "lineno": linecount, "thread": tok[3] }
-        d = datetime.datetime.strptime(tok[0][0:23], "%Y-%m-%dT%H:%M:%S.%f")
-        outDoc["ts"] = d
+        outDoc["thread"] = tok[3] 
         if (tok[4]+tok[5] == "appliedop:"):
             outDoc["appliedOP"] = tok[6]
             outDoc["Details"] = jsonObj.getJsonVal(0)
@@ -674,10 +681,6 @@ def procLine(x,inpath,linecount):
             outDoc["message"] = outStr[1:]
         return(outDoc)         
     elif (tok[2] == "COMMAND") | (tok[2] == "WRITE"):
-        outDoc = { "type": tok[2], "infile": inpath, "lineno": linecount }
-        #use ciso8601
-        d = datetime.datetime.strptime(tok[0][0:28], "%Y-%m-%dT%H:%M:%S.%f%z")
-        outDoc["ts"] = d
         connMatch = connection.match(tok[3])
         if connMatch != None:
             outDoc["connection"] =  connMatch.group(1)
@@ -712,7 +715,7 @@ def procLine(x,inpath,linecount):
         if startpos+1 < len(tok):
             outDoc["Object"] = tok[startpos+1]
         else:
-            print(tok[0])
+            logger.logDebug(tok[0])
         if tok[startpos+2] == 'appName:':
             outDoc["application"] = tok[startpos+3]
             j = startpos + 4
@@ -770,6 +773,140 @@ def procLine(x,inpath,linecount):
         lineData = parseLine(tok,j,jsonObj)
         if isinstance(lineData,dict):
             outDoc.update(lineData)
+        if ("filter_shape" not in outDoc) and ("originatingCommand" in outDoc):
+            if ("Command" in outDoc) and (outDoc["Command"] == "getMore") and ("filter" in outDoc["originatingCommand"]):
+                outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(outDoc["originatingCommand"]["filter"])
+            elif ("Command" in outDoc) and (outDoc["Command"] == "getMore") and ("pipeline" in outDoc["originatingCommand"]):
+                outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(outDoc["originatingCommand"]["pipeline"])
+        
+        
+            
+
+#
+# Now Calculate stuff
+#
+        if ("docsExamined" in outDoc) & ("nreturned" in outDoc):
+            try:
+                outDoc["Ratio"] = outDoc["docsExamined"]/outDoc["nreturned"]
+            except Exception:
+                pass
+
+        return(outDoc)
+    return None
+
+def procJSON(x,inpath,linecount,shortName):
+    
+    try:
+        tok = json.loads(x, object_hook=json_util.object_hook)
+    except Exception as err:
+        #print(type(err))
+        #(cleaned,lastpos) = cleanJSON(snip,0)
+        try:
+            tok = simplejson.loads(x)
+        except Exception as err:
+            logger.logInfo("===========\n{}\n{}\n===========".format(x,err))
+
+    
+    d = tok["t"]
+    outDoc = { "type": tok["c"], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName}
+
+    if tok["c"] == "NETWORK":
+        if tok["msg"] == "Connection accepted":
+            outDoc["Operation"] = "accept"
+            outDoc["connection"] = tok["attr"]["connectionId"]
+            outDoc["ip_addr"] = tok["attr"]["remote"]
+            #print(outstr)
+        elif tok["msg"] == "Connection ended":
+            outDoc["Operation"] = "end"
+            outDoc["connection"] = tok["attr"]["connectionId"]
+            outDoc["ip_addr"] = tok["attr"]["remote"]
+            return(outDoc)
+        elif tok["msg"] == "client metadata":
+            outDoc["Operation"] = "start"
+            outDoc["connection"] = tok["attr"]["client"]
+            outDoc["ip_addr"] = tok["attr"]["remote"]
+            outDoc["connection_info"] = tok["attr"]["doc"]
+            return(outDoc)
+        return None
+    elif tok["c"] == "CONTROL":
+        return None
+    elif tok["c"] == "REPL":
+        outDoc["thread"] = tok["ctx"] 
+        if (tok["msg"] == "Applied op"):
+            outDoc["appliedOP"] = list(tok["attr"].items())[0]
+            outDoc["Details"] = tok["attr"]
+        else:
+            outDoc["message"] = tok["msg"]
+            if "attr" in tok:
+                outDoc["Details"] = tok["attr"]
+        return(outDoc)         
+    elif (tok["c"] == "COMMAND") | (tok["c"] == "WRITE"):
+        outDoc["connection"] =  tok["id"]
+        if (tok["msg"] != "Slow query"):
+            outDoc["msg"] = tok["msg"]
+            outDoc["attr"] = tok["attr"]
+            return(outDoc)
+        attr = tok["attr"]
+
+        if "appName" in attr:
+            outDoc["application"] = attr["appName"]
+        
+
+
+        if attr["type"] == "command":
+            cmdType,obj = list(attr["command"].items())[0]
+            outDoc["Object"] = obj
+            outDoc["Command"] = cmdType
+            cmdData = attr["command"]
+            if isinstance(cmdData,dict):
+                if cmdType in filterLocations:
+                    fltTree = filterLocations[cmdType].split(".")
+                    filter = cmdData
+                    for key in fltTree:
+                        parent = filter
+                        if isinstance(parent,dict) and (key in parent):
+                            filter = parent[key]
+                        else:
+                            filter = None
+                            break
+                        if isinstance(filter, list):
+                            filter = filter[0]
+                    if filter != None:
+                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
+                    #del parent[key]
+                outDoc["attr"] = cmdData
+            else:
+                print("Error parsing command: in {} on line {}".format(inpath,linecount))
+        elif attr["type"] == "remove":
+            cmdType = "remove"
+            outDoc["Object"] = attr["ns"].split(".")[1]
+            outDoc["Command"] = cmdType
+            cmdData = attr["command"]
+            if isinstance(cmdData,dict):
+                if cmdType in filterLocations:
+                    fltTree = filterLocations[cmdType].split(".")
+                    filter = cmdData
+                    for key in fltTree:
+                        parent = filter
+                        if isinstance(parent,dict) and (key in parent):
+                            filter = parent[key]
+                        else:
+                            filter = None
+                            break
+                        if isinstance(filter, list):
+                            filter = filter[0]
+                    if filter != None:
+                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
+                    #del parent[key]
+                outDoc["attr"] = cmdData
+            else:
+                print("Error parsing command: in {} on line {}".format(inpath,linecount))
+        else:
+            print("Unexpected type "+attr["type"])
+        for key in attr:
+            if (key != "type") & (key != "command"):
+                outDoc[key] = attr[key]
+
         if ("filter_shape" not in outDoc) and ("originatingCommand" in outDoc):
             if ("Command" in outDoc) and (outDoc["Command"] == "getMore") and ("filter" in outDoc["originatingCommand"]):
                 outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(outDoc["originatingCommand"]["filter"])
@@ -956,6 +1093,7 @@ USAGE
         parser.add_argument('--iso8859', dest="isoEncoding", action="store_true", help="Input file is ISO-8859-1 rather than UTF-8")
         parser.add_argument('--URI', dest="URI", metavar='uri', help="MongoDb database URI")
         parser.add_argument('-c', '--coll', dest="coll", metavar='coll', help="Collection to import into")
+        parser.add_argument('--namePattern', dest="namePat", metavar='pattern', help="Regex to match the short name")
         parser.add_argument("-s", "--startdate", dest="start", metavar="Start From", help="The Start Date - format YYYY-MM-DD", type=valid_date)
         parser.add_argument(dest="paths", help="paths to folder(s) with source file(s) [default: %(default)s]", metavar="path", nargs='+')
 
@@ -982,7 +1120,17 @@ USAGE
         mycol = mydb[args.coll]
         
         newentry = re.compile("^[0-9]{4,4}-[0-9]{2,2}-[0-9]{2,2}T")
+        jsonentry = re.compile("^{\"t\":{\"\$date\"\:")
         
+        namePat = None 
+        if (args.namePat != None) and ("(" in args.namePat):
+            try:
+                namePat = re.compile(args.namePat)
+            except Exception as err:
+                print('Error parsing Name Pattern "{}": {}'.format(args.namePat,err))
+        
+                                       
+            
 
 
         
@@ -993,7 +1141,12 @@ USAGE
             if args.isoEncoding:
                 fileEncoding= "ISO-8859-1"
             f = open(inpath, "r",encoding = fileEncoding)
-            print(inpath)
+            if namePat == None:
+                shortName = os.path.basename(inpath)
+            else:
+                nameMatch = namePat.search(inpath)
+                shortName = nameMatch.group(1)
+            print("Processing {} imported as {}".format(inpath,shortName))
             docBuf = []
             
             #Readahead  the first line
@@ -1007,7 +1160,7 @@ USAGE
               # next line is a new entry so process the buffer in x
               if newentry.match(newline):
                   try:
-                      ret = procLine(lineBuffer,inpath,linecount)
+                      ret = procLine(lineBuffer,inpath,linecount,shortName)
                   except Exception as progEx:
                     _, exceptionObject, tb  = sys.exc_info()
                     stackSummary = traceback.extract_tb(tb,3)
@@ -1033,12 +1186,20 @@ USAGE
                       
                   #done with x move the readahead into x 
                   lineBuffer = newline
+              elif jsonentry.match(newline):
+                  ret = procJSON(lineBuffer,inpath,linecount,shortName)
+                  if ret != None:
+                      docBuf.append(fixDollar(ret))
+                  lineBuffer = newline
               else:
                   # multi line log entry append 
                   lineBuffer += newline
             #Process the last line
             try:
-                ret = procLine(lineBuffer,inpath,linecount)
+                if newentry.match(lineBuffer):
+                    ret = procLine(lineBuffer,inpath,linecount,shortName)
+                elif jsonentry.match(lineBuffer):
+                    ret = procJSON(lineBuffer,inpath,linecount,shortName)
             except Exception as progEx:
                 _, exceptionObject, tb  = sys.exc_info()
                 stackSummary = traceback.extract_tb(tb,1)
