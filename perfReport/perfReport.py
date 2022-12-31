@@ -25,6 +25,7 @@ from argparse import RawDescriptionHelpFormatter
 import traceback
 import csv
 import json
+import re
 
 
 
@@ -43,7 +44,9 @@ mtchSlow = {"$match": {"time": {"$gt": 1000}}}
 mtchSort = {"$match": {"hasSortStage": {"$exists": True}}}
 #grpByShape = {"$group": {"_id": {"col": "$Object", "Op": "$Command", "filt":"$filter_shape"}, "cnt": {"$sum": 1}, \
 #                         "cost": {"$sum": "$time"}, "ratio": {"$avg": "$Ratio"},"samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
-grpByShape = {"$group": {"_id": {"col": "$Object", "filt":"$filter_shape"}, "cnt": {"$sum": 1}, "Op": {"$addToSet": "$Command"},
+addShape = {"$addFields": {"shape": {"$ifNull": ["$planCacheKey", "$filter_shape"]}}}
+grpByShape = {"$group": {"_id": {"col": "$Object", "plan":"$shape"}, "cnt": {"$sum": 1}, "filt": {"$addToSet": "$filter_shape"}, "Op": {"$addToSet": "$Command"},
+                         "Sort": {"$addToSet": "$attr.sort"},
                          "cost": {"$sum": "$time"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$time"}, "maxTime": {"$max": "$time"},
                          "totalRead": {"$sum": "$docsExamined"},"totalRet": {"$sum": "$nreturned"},
                          "samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
@@ -181,6 +184,60 @@ class myLogger:
     def logComplete(self):
         print(" ",file=self.file)
 
+class sharding:
+    def __init__(self,inpath,isiso=False):
+        self.databases = {}
+        fileEncoding = "utf-8"
+        if isiso:
+            fileEncoding= "ISO-8859-1"
+        f = open(inpath, "r",encoding = fileEncoding)
+        
+        
+        for newline in f:
+            if newline.startswith("  databases"):
+                break
+        thisdb = None 
+        dbline = re.compile("{\s*\"_id\"\s*:\s*\"([a-zA-Z0-9_.]*)\".*\"primary\"\s*:\s*\"([a-zA-Z0-9_]*)\".*\"partitioned\"\s*:\s*(true|false)")
+        colpat = "^\s{16}"+"noDB"+"\\.([a-zA-Z0-9_.]*)"
+        colline = re.compile(colpat)
+        colname = re.compile("                wells\\.([a-zA-Z0-9_.]*)")
+        collections = {}
+        for newline in f:
+            rematch = dbline.search(newline)
+            if rematch != None:
+                if thisdb != None:
+                    self.databases[thisdb["name"]] = {"primary": thisdb["primary"], "collections": collections}
+                if rematch.group(3) == "true":
+                    thisdb = {"name": rematch.group(1)}
+                    thisdb["primary"] = rematch.group(2)
+                    colpat = "^\s{16}"+rematch.group(1)+"\\.([a-zA-Z0-9_.]*)"
+                else:
+                    thisdb = None
+                    colpat = "^\s{16}"+"noDB"+"\\.([a-zA-Z0-9_.]*)"
+                colline = re.compile(colpat)
+                collections = {}
+                continue
+            rematch = colline.match(newline)
+            if rematch != None:
+                shardkey = f.readline().strip()
+                jsontxt = shardkey[11:]
+                try:
+                    data = json.loads(jsontxt, object_hook=json_util.object_hook)
+                except Exception as err:
+                    try:
+                        data = simplejson.loads(jsontxt)
+                    except Exception as err:
+                        logger.logInfo("===========\n{}\n{}\n===========".format(jsontxt,err))
+                        data = jsontxt
+                collections[rematch.group(1)] = data
+        if thisdb != None:
+            self.databases[thisdb["name"]] = {"primary": thisdb["primary"], "collections": collections}
+            
+    def getKey(self,db,col):
+        if db in self.databases:
+            if col in self.databases[db]["collections"]:
+                return(self.databases[db]["collections"][col])
+        return "No Shard Key"
        
     
 def keyrepl(matchobj):
@@ -222,9 +279,14 @@ def doQuote(token,c,alwaysQuote=False):
         return(outstring)
     
 def addFieldValue(fields,key,output,default=None):
-    if key in fields:
-        if isinstance(fields[key],list) and (len(fields[key]) == 1):
-            output.append(fields[key][0])
+    if isinstance(fields,dict) and (key in fields):
+        if isinstance(fields[key],list):
+            if (len(fields[key]) == 1):
+                output.append(fields[key][0])
+            elif len(fields[key]) == 0:
+                output.append('')
+            else:
+                output.append(fields[key])
         else: 
             output.append(fields[key])
     else:
@@ -240,16 +302,17 @@ def writeResults(reportwriter,title,mycol,pipeline,isMongos=False):
     reportwriter.writerow([title])
     reportwriter.writerow(["="*len(title)])
     if isMongos:
-        headers = ["Collection","Operation","Filter","Count","Cost","Avg Ratio","min Time","max Time","tot Read","tot Ret","min Shards","max shards","Plan(s)","Sample ID","Sample Filter"]
+        headers = ["Collection","Operation","Filter","Sort","Count","Cost","Avg Ratio","min Time","max Time","tot Read","tot Ret","min Shards","max shards","Plan(s)","Sample ID","Sample Filter"]
     else:
-        headers = ["Collection","Operation","Filter","Count","Cost","Avg Ratio","min Time","max Time","tot Read","tot Ret","Plan(s)","Sample ID","Sample Filter"]
+        headers = ["Collection","Operation","Filter","Sort","Count","Cost","Avg Ratio","min Time","max Time","tot Read","tot Ret","Plan(s)","Sample ID","Sample Filter"]
     reportwriter.writerow(headers)
     cursor = mycol.aggregate(pipeline,allowDiskUse=True)
     for shape in  cursor:
         costRow = []
         addFieldValue(shape["_id"],"col",costRow)
         addFieldValue(shape,"Op",costRow)
-        addFieldValue(shape["_id"],"filt",costRow)
+        addFieldValue(shape,"filt",costRow)
+        addFieldValue(shape,"Sort",costRow)
         addFieldValue(shape,"cnt",costRow,default=0)
         addFieldValue(shape,"cost",costRow,default=0)
         addFieldValue(shape,"ratio",costRow,default=1)
@@ -278,7 +341,7 @@ def writeResults(reportwriter,title,mycol,pipeline,isMongos=False):
                 addFieldValue(sample["attr"]["pipeline"],"q",costRow)
         reportwriter.writerow(costRow)
         
-def writeIndexResults(indw,colw,dbw,mycol,shardHosts):
+def writeIndexResults(indw,colw,dbw,mycol,shardHosts,opsw=None,shards=None):
     
     logger.logInfo("indexes")
     
@@ -286,7 +349,7 @@ def writeIndexResults(indw,colw,dbw,mycol,shardHosts):
 
     headers = ["Collection","Operation","Filter","Count","Cost","Avg Ratio","min Time","max Time","tot Read","tot Ret","min Shards","max shards","Plan(s)","Sample ID","Sample Filter"]
     
-    indexHeaders = ["Name","Database","Collection","Index Name","Index Size","Doc Count","Total Ops","Key Size","Key","isID","isTTL","Unused"]
+    indexHeaders = ["Name","Database","Collection","Index Name","Index Size","Doc Count","Total Ops","Key Size","Key","isID","isTTL","Unused","New Index","Shard Key"]
     dbw.writerow(["Database","# Collections","Datasize","IndexSize","Used Index Size","# Shards"])
     colw.writerow(["Collection","# Databases"])
     
@@ -297,17 +360,23 @@ def writeIndexResults(indw,colw,dbw,mycol,shardHosts):
     nproc = 0
     shardsUsed = []
     for collection in  cursor:
-        print(collection["_id"])
+        #print(collection["_id"])
         if collection["size"] == None:
             print(str(collection["_id"])+" is empty")
             continue
+        if "indexStats" not in collection:
+            continue # oplog
         nproc += 1
         if (nproc % 10000) == 0:
             print(nproc)
         db = collection["_id"]["DB"]
         col = collection["_id"]["Collection"]
-        collectedAt = collection["collectedAt"]
+        collectedAt = collection["runTime"]
         ops = {}
+        if shards != None:
+            shardKey = shards.getKey(db,col)
+        else:
+            shardKey = ""
 
         for indshard in collection["indexStats"]:
             if "accesses" not in indshard:
@@ -332,13 +401,22 @@ def writeIndexResults(indw,colw,dbw,mycol,shardHosts):
             isId = False
             if indshard["name"] == "_id_":
                 isId = True
+            isSK = False
+            #print(str(indshard["key"]))
+            #print(shardKey)
+            if str(shardKey) == str(indshard["key"]):
+                isSK = True
+            if shardKey == indshard["key"]:
+                isSK = True
             if indshard["name"] in ops:
                 ops[indshard["name"]]["ops"].update(shardops)
                 ops[indshard["name"]]["totalops"] += opsps
+                if opsseconds < ops[indshard["name"]]["period"]:
+                    ops[indshard["name"]]["period"] = opsseconds   # keep the shortest 
                 if ops[indshard["name"]]["isTtl"] != isTtl:
                     ops[indshard["name"]]["isTtl"] = "mixed"
             else:
-                ops[indshard["name"]] = {"ops": shardops, "totalops": opsps, "entrySize": -1, "key": indshard["key"], "isId": isId, "isTtl": isTtl }
+                ops[indshard["name"]] = {"ops": shardops, "totalops": opsps, "period": opsseconds, "entrySize": -1, "key": indshard["key"], "isId": isId, "isTtl": isTtl, "isSK": isSK }
         used = unused = usedsize = unusedsize = 0
         maxshards = 1
         if ("indexSizes" not in collection) or (collection["indexSizes"] == None):
@@ -384,17 +462,22 @@ def writeIndexResults(indw,colw,dbw,mycol,shardHosts):
         else:
             collections[col] = {"databases": 1 }
                 
+    if opsw != None:
+        indexHeaders2 = indexHeaders.copy()
+        indexHeaders2.append("Shard")
+        opsw.writerow(indexHeaders2)
     for shard in shardsUsed:
         indexHeaders.append("Ops "+shard)
     indw.writerow(indexHeaders)
+
     for index in indexes:
         for dbase in indexes[index]:
             try:
-                print(dbase)
+                #print(dbase)
                 if dbase["Operations"] == None:
                     indw.writerow([index,dbase["database"],dbase["size"],-1,0,""])
                 else:
-                    isID = isTTL = unUsed = "FALSE"
+                    isID = isTTL = unUsed = isNew = isShardKey = "FALSE"
                     if dbase["Operations"]["isTtl"]:
                         isTTL = "TRUE"
                     else:
@@ -402,14 +485,23 @@ def writeIndexResults(indw,colw,dbw,mycol,shardHosts):
                             unUsed = "TRUE"
                     if dbase["Operations"]["isId"]:
                         isID = "TRUE"
+                    if dbase["Operations"]["period"] < (24*3600*7):   # One week
+                        isNew = "TRUE"
+                    if dbase["Operations"]["isSK"]:
+                        isShardKey = "TRUE"
                         
                     newrow = [index,dbase["database"],dbase["collection"],dbase["indexName"],dbase["size"], dbase["docs"], dbase["Operations"]["totalops"],
-                                    dbase["Operations"]["entrySize"], dbase["Operations"]["key"],isID,isTTL,unUsed]
+                                    dbase["Operations"]["entrySize"], dbase["Operations"]["key"],isID,isTTL,unUsed,isNew,isShardKey]
                     for shard in shardsUsed:
                         if shard in dbase["Operations"]["ops"]:
                             newrow.append(dbase["Operations"]["ops"][shard])
+                            if opsw != None:
+                                opsrow = [index,dbase["database"],dbase["collection"],dbase["indexName"],dbase["size"], dbase["docs"], dbase["Operations"]["ops"][shard],
+                                        dbase["Operations"]["entrySize"], dbase["Operations"]["key"],isID,isTTL,unUsed,isNew,isShardKey,shard]
+                                opsw.writerow(opsrow)
                         else:
                             newrow.append("")
+
                         
                     indw.writerow(newrow)
             except:
@@ -472,10 +564,13 @@ USAGE
         parser.add_argument("--debug", dest="debug", action="store_true", help="debug")
         parser.add_argument("--mongos", dest="mongos", action="store_true", help="Data from Mongos")
         parser.add_argument("--infile", dest="infile", metavar="filter", help="Initial Match")
+        parser.add_argument("--shstatus", dest="shstat", metavar="file", help="sh.status() output")
         parser.add_argument("--startdate", dest="start", metavar="Start From", help="The Start Date - format YYYY-MM-DD", type=valid_date)
         parser.add_argument("--enddate", dest="end", metavar="Start From", help="The Start Date - format YYYY-MM-DD", type=valid_date)
         parser.add_argument("--indexuse", dest="index", action="store_true", help="Index Stats")
+        parser.add_argument("--pershard", dest="pershard", action="store_true", help="Ops Per shard")
         parser.add_argument('--outfile', '-o', dest="outFile", metavar='outFile', help="Output file")
+        parser.add_argument('--top', dest="topCost", metavar='topN', help="List N most Expensive", type=int)
         parser.add_argument('-V', '--version', action='version', version=program_version_message)
         parser.add_argument('--URI', dest="URI", metavar='uri', help="MongoDb database URI")
         parser.add_argument('-c', '--coll', dest="coll", metavar='coll', help="Collection to import into")
@@ -509,6 +604,12 @@ USAGE
         print(matcher)
         print (mtchSlow)
         logger = myLogger("logParser",severity=logLevel)
+        
+        if args.shstat != None:
+            shards = sharding(args.shstat)
+        else:
+            shards = None
+            
 
         csvfile = sys.stdout
         if args.index:
@@ -517,11 +618,17 @@ USAGE
                 indexfile = open(basepath+".ind.csv", "w", newline='')
                 colfile = open(basepath+".col.csv", "w", newline='')
                 dbfile = open(basepath+".db.csv", "w", newline='')
+                if args.pershard:
+                    opsfile = open(basepath+".ops.csv", "w", newline='')
             else:
                 indexfile = colfile = dbfile = csvfile
             indexwriter = csv.writer(indexfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             colwriter = csv.writer(colfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             dbwriter = csv.writer(dbfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            if args.pershard:
+                opswriter = csv.writer(opsfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            else:
+                opswriter = None
         else:
             if args.outFile != None:
                 csvfile = open(args.outFile, "w", newline='')
@@ -547,9 +654,25 @@ USAGE
             writeResults(reportwriter,"Multi Shard > 1",mycol,[matchstage,grpBynShards,excludeCntOne,srtBynShards,lmt20],isMongos=True)
             logger.logInfo("Done Multi Shard > 1")
         elif args.index:
-            shardHosts = {"mon-pri-eu-west:27018": "EUWest", "mon-sec-de-west:27018": "EUEast",
-                          "mon-sec-usnw:27018": "USWest", "mon-pri-useast-c:27018": "USEast"}
-            writeIndexResults(indexwriter,colwriter,dbwriter,mycol,shardHosts)
+
+            #shardHosts = {"mongo-cluster1-shard3-node3-rc-sf89l:27018": "Shard3",
+            #              "mongo-cluster1-shard1-node1-rc-5txc6:27018": "Shard1",
+            #              "mongo-cluster1-shard2-node2-rc-xh4z2:27018": "Shard2"}
+            shardHosts = {}
+            if args.pershard:
+                cur = mycol.aggregate([{'$match': {'_id.DB': {'$ne': 'all'}}},
+                                 {'$unwind': {'path': '$indexStats'}},
+                                 {'$group': {'_id': '$indexStats.host', 'shard': {'$first': '$indexStats.shard'}}}
+                                ])
+                for host in cur:
+                    shardHosts[host["_id"]] = host["shard"]
+            writeIndexResults(indexwriter,colwriter,dbwriter,mycol,shardHosts,opswriter,shards)
+        elif args.topCost != None:
+            selector = grpByShape
+            lmtN = {"$limit": args.topCost}
+            if args.multi:
+                selector = grpByColShape
+            writeResults(reportwriter,"Overall Cost",mycol,[matchstage,mtchRatio,selector,srtByCost,lmtN])
         else:
             selector = grpByShape
             if args.multi:
