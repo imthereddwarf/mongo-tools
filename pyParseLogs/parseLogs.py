@@ -26,7 +26,10 @@ from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 from argparse import ArgumentTypeError
 import traceback
-from dns.rdataclass import NONE
+import pytz
+import datetime
+from platform import _ver_stages
+
 
 
 
@@ -91,7 +94,7 @@ cmdMessages = {"successfully": {"cmdType": "setParam", "newValue": 5, "oldValue"
                "serverStatus": {"cmdType": "serverStatus", "Value": 3, "Data": 4},
                "mongos": {"cmdType": "mongos", "Value": "1-"}}
 
-filterLocations = {"update": "updates.q", "count": "query", "find": "filter", "aggregate": "pipeline", "delete": "deletes.q", 
+filterLocations = {"update": "q", "count": "query", "find": "filter", "aggregate": "pipeline", "delete": "deletes.q", 
                     "findAndModify": "query", "command": "q", "remove": "q"}
 
 
@@ -844,7 +847,8 @@ def procJSON(x,inpath,linecount,shortName):
         outDoc["connection"] =  tok["id"]
         if (tok["msg"] != "Slow query"):
             outDoc["msg"] = tok["msg"]
-            outDoc["attr"] = tok["attr"]
+            if "attr" in tok:
+                outDoc["attr"] = tok["attr"]
             return(outDoc)
         attr = tok["attr"]
 
@@ -855,7 +859,62 @@ def procJSON(x,inpath,linecount,shortName):
 
         if attr["type"] == "command":
             cmdType,obj = list(attr["command"].items())[0]
+            if cmdType == 'getMore':
+                cursor = obj
+                outDoc['Object'] = attr["ns"].split(".")[1]
+            else:
+                outDoc["Object"] = obj
+            outDoc["Command"] = cmdType
+            cmdData = attr["command"]
+            if isinstance(cmdData,dict):
+                if cmdType in filterLocations:
+                    fltTree = filterLocations[cmdType].split(".")
+                    filter = cmdData
+                    for key in fltTree:
+                        parent = filter
+                        if isinstance(parent,dict) and (key in parent):
+                            filter = parent[key]
+                        else:
+                            filter = None
+                            break
+                        if isinstance(filter, list):
+                            filter = filter[0]
+                    if filter != None:
+                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
+                    #del parent[key]
+                outDoc["attr"] = cmdData
+            else:
+                print("Error parsing command: in {} on line {}".format(inpath,linecount))
+        elif attr["type"] == "getmore":
+            cmdType,cursor = list(attr["command"].items())[0]
+            orgCmd,obj = list(attr["originatingCommand"].items())[0]
             outDoc["Object"] = obj
+            outDoc["Command"] = cmdType
+            outDoc["cursor"] = cursor
+            outDoc["batchSize"] = attr["command"]["batchSize"]
+            cmdData = attr["originatingCommand"]
+            if isinstance(cmdData,dict):
+                if orgCmd in filterLocations:
+                    fltTree = filterLocations[orgCmd].split(".")
+                    filter = cmdData
+                    for key in fltTree:
+                        parent = filter
+                        if isinstance(parent,dict) and (key in parent):
+                            filter = parent[key]
+                        else:
+                            filter = None
+                            break
+                        if isinstance(filter, list):
+                            filter = filter[0]
+                    if filter != None:
+                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
+                    #del parent[key]
+                outDoc["attr"] = cmdData
+            else:
+                print("Error parsing command: in {} on line {}".format(inpath,linecount))
+        elif attr["type"] == "update":
+            cmdType = "update"
+            outDoc["Object"] = attr["ns"].split(".")[1]
             outDoc["Command"] = cmdType
             cmdData = attr["command"]
             if isinstance(cmdData,dict):
@@ -911,7 +970,19 @@ def procJSON(x,inpath,linecount,shortName):
             if ("Command" in outDoc) and (outDoc["Command"] == "getMore") and ("filter" in outDoc["originatingCommand"]):
                 outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(outDoc["originatingCommand"]["filter"])
             elif ("Command" in outDoc) and (outDoc["Command"] == "getMore") and ("pipeline" in outDoc["originatingCommand"]):
-                outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(outDoc["originatingCommand"]["pipeline"])
+                aggPipe = outDoc["originatingCommand"]["pipeline"]
+                if isinstance(aggPipe,list):
+                    filter = None
+                    for stage in aggPipe:
+                        if "$match" in stage:
+                            filter = stage["$match"]
+                            break
+                        elif ("$addFields" in stage) or ("$set" in stage):
+                            continue
+                        else:
+                            break
+                    if filter != None:
+                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
         
         
             
@@ -1012,6 +1083,18 @@ def fmtQuery(input):
             valtxt = fltKey + ": " + docTxt
             for subPar in subParams:
                 parameters.append(subPar)
+        elif isinstance(value,str):
+            if value.startswith("new"):
+                if value.startswith("newDate"):
+                    epoch = int(value[8:-4])
+                    try:
+                        dateval = datetime.datetime.fromtimestamp(epoch,pytz.utc)
+                    except ValueError as e:
+                        dateval = datetime.datetime(9999,12,31,23,59,59)
+                    parameters.append(dateval)
+            else:
+                parameters.append(value);
+            valtxt = fltKey+": 1";
         else:
             parameters.append(value);
             valtxt = fltKey+": 1";
@@ -1190,6 +1273,14 @@ USAGE
                   ret = procJSON(lineBuffer,inpath,linecount,shortName)
                   if ret != None:
                       docBuf.append(fixDollar(ret))
+                  if len(docBuf) >= 1000:
+                      try:
+                          mycol.insert_many(docBuf,ordered=False)
+                      except Exception as err:
+                          print(err)
+
+                          print(docBuf)
+                      docBuf[:] = []
                   lineBuffer = newline
               else:
                   # multi line log entry append 
