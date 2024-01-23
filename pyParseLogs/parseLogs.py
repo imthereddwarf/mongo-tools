@@ -17,11 +17,11 @@ It defines classes_and_methods
 
 import pymongo
 from bson import json_util
+from bson.objectid import ObjectId
 import json, re
 import simplejson
 import datetime
 import sys, os
-from builtins import input
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 from argparse import ArgumentTypeError
@@ -29,6 +29,7 @@ import traceback
 import pytz
 import datetime
 from platform import _ver_stages
+
 
 
 
@@ -79,6 +80,8 @@ floating = re.compile("^[+-]?[0-9.]+[eE][+-]?[0-9.]+")
 digits = re.compile("([0-9]+)")
 exTime = re.compile("([0-9]+)ms")
 exRange = re.compile("([0-9]+)-([0-9]*)")
+exModule = re.compile("^\[([a-zA-Z-]*)(-[0-9]*)?]$|^\[conn([0-9]*)]$")
+
 notEscapedDouble  = re.compile("[^\\\\]\"")
 logger = None
 jsonEscapes = ["b","f","n","r","t",'"',"\\"]
@@ -104,6 +107,7 @@ updateLocations = {"command": "u", "update": "updates.u", "findAnModify": "updat
 sortLocations = {"command": "u", "update": "updates.u", "findAndModify": "sort", "find": "sort"}
                
 uKeys = ["multi:","projec","shardV"]
+jsonTypes = []
 
 bigInt = 0x8FFFFFFF
 smallInt = 0xF0000000
@@ -261,6 +265,8 @@ class myLogger:
     
     def logComplete(self):
         print(" ",file=self.file)
+        
+    
 
        
     
@@ -301,6 +307,14 @@ def doQuote(token,c,alwaysQuote=False):
         else:
             outstring = token + c;
         return(outstring)
+    
+def getShardRange(tok,start,jsonObj):
+    outDoc = {}
+    if tok[start].startswith("[JSON"):
+        outDoc['min'] = jsonObj.getJsonVal(tok[start][1:-1])
+    if tok[start+1].startswith("JSON"):
+        outDoc['max'] = jsonObj.getJsonVal(tok[start+1][:-1])
+    return(outDoc)
     
 def cleanJSON(input,startpos,myPath=""):
     #print(input[startpos:])
@@ -577,7 +591,7 @@ def parseLine(tok,j,jsonObj):
             j=j+1
     return outDoc
 
-def procLine(x,inpath,linecount,shortName):
+def procLine(x,inpath,linecount,shortName,timeRange):
     
     level = 0
     position = 0
@@ -632,15 +646,24 @@ def procLine(x,inpath,linecount,shortName):
     tok = newstr.split()
     
     d = datetime.datetime.strptime(tok[0][0:23], "%Y-%m-%dT%H:%M:%S.%f")
+    if "start" in timeRange and d < timeRange["start"]:
+        return None
+    if "end" in timeRange and d > timeRange["end"]:
+        return True  #all done in this file
+    
     outDoc = { "type": tok[2], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName}
 
     
     if tok[2] == "NETWORK":
-        outstr = "{ type: \"NETWORK\","
         if tok[4] == "connection":
-            outstr += 'connection: "'+tok[8][1:]+'",'
-            ipmatch = ipport.match(tok[7])
-            outstr += 'ip_addr: "'+ipmatch.group(1)+'"}'
+            if tok[5] == "accepted":
+                outDoc["Operation"] = "Accept"
+                outDoc['connection'] = tok[8][1:]
+                ipmatch = ipport.match(tok[7])
+                outDoc['ip_addr'] = ipmatch.group(1)+'"}'
+                return(outDoc)
+            else:
+                return None
             #print(outstr)
         elif tok[4] == "end":
             outDoc["Operation"] = "end"
@@ -658,11 +681,163 @@ def procLine(x,inpath,linecount,shortName):
             outDoc["connection_info"] = jsonObj.getJsonVal(0)
             return(outDoc)
         return None
+    elif tok[2] == "SHARDING":
+        modMatch = exModule.match(tok[3])
+        if not(modMatch.group(3) == None):
+            outDoc["Connection"] = modMatch.group(3)
+        else:
+            outDoc["Module"] = modMatch.group(1)
+        if tok[4] == "moveChunk":
+            outDoc['shardOp'] = "status"
+            if tok[8].startswith("JSON"):
+                outDoc['chunk'] = jsonObj.getJsonVal(tok[8])
+            outDoc['memUsed'] = int(tok[11])
+            outDoc['docsLeft'] = int(tok[11])
+            return(outDoc)
+            #print(outstr)
+        elif tok[4] == "request" and tok[5] == "split":
+            outDoc['shardOp'] = "spltLookup"
+            if tok[11].startswith("JSON"):
+                outDoc['origChunk'] = jsonObj.getJsonVal(tok[11])
+            if tok[13].startswith("JSON"):
+                outDoc['newChunk'] = jsonObj.getJsonVal(tok[13])
+            outDoc['collection'] = tok[10]
+            return(outDoc)
+            #print(outstr)
+        elif tok[4] == "Updating" and tok[5] == "metadata":
+            outDoc['shardOp'] = "updMeta"
+            outDoc['collection'] = tok[8]
+            outDoc['old'] = {'collection': tok[12], 'shard': tok[15]}
+            outDoc['new'] = {'collection': tok[19], 'shard': tok[22]}
+            return(outDoc)
+        elif tok[4] == "Migration" and tok[5] == "succeeded":
+            outDoc['shardOp'] = "succeeded"
+            outDoc['new'] = {'collection': tok[11]}
+            return(outDoc)
+        elif tok[4] == "Migration" and tok[5] == "successfully" and tok[6] == "entered" and tok[7] == "critical": 
+            outDoc['shardOp'] = "entered critical"
+            outDoc['msg'] = "Migration successfully entered critical section"
+            return(outDoc)
+        elif tok[4] == "about" and tok[5] == "to" and tok[6] == "log" and tok[7] == "metadata":
+            outDoc['shardOp'] = "log"
+            if tok[11].startswith("JSON"):
+                outDoc['info'] = jsonObj.getJsonVal(tok[11])
+            return(outDoc)
+        elif tok[4] == "autosplitted":
+            outDoc['shardOp'] = "autosplit"
+            outDoc['collection'] = tok[5]
+            outDoc['range'] = getShardRange(tok,11,jsonObj)
+            outDoc['shard'] = tok[8]
+            outDoc['lastmod'] = tok[10][:-1]
+            outDoc['nParts'] = int(tok[14])
+            outDoc['maxChunkSize'] = int(tok[17][:-1])
+            return(outDoc)
+        elif tok[4] == "Finding" and tok[5] == "the":
+            outDoc['shardOp'] = "findAuto"
+            outDoc['collection'] =  tok[10]
+            if tok[13].startswith("JSON"):
+                outDoc['shardKey'] = jsonObj.getJsonVal(tok[13])
+            outDoc['numSlits'] = tok[16]
+            tMatch = exTime.search(tok[19])
+            if (tMatch):
+                outDoc['time'] = int(tMatch.group(1))
+            return(outDoc)
+        elif tok[4] == "No" and tok[5] == "documents":
+            outDoc['shardOp'] = "noDoc"
+            outDoc['collection'] =  tok[10]
+            outDoc['range'] = getShardRange(tok,12,jsonObj)
+            return(outDoc)
+        elif tok[4] == "Waiting" and tok[5] == "for":
+            outDoc['shardOp'] = "waitMaj"
+            outDoc['collection'] =  tok[12]
+            return(outDoc)
+        elif tok[4] == "migrate" and tok[5] == "commit":
+            outDoc['shardOp'] = "migComm"
+            outDoc['collection'] =  tok[11]
+            outDoc['range'] = getShardRange(tok,12,jsonObj)
+            return(outDoc)
+        elif tok[4] == "Finished" and tok[5] == "deleting":
+            if tok[6] == "documents":
+                outDoc['shardOp'] = "finDel"
+                outDoc['collection'] =  tok[8]
+                outDoc['range'] = getShardRange(tok,10,jsonObj)
+            else:
+                outDoc['shardOp'] = "finDel"
+                outDoc['collection'] =  tok[6]
+                outDoc['range'] = getShardRange(tok,8,jsonObj)
+            return(outDoc)
+        elif tok[4] == "Deferring" and tok[5] == "deletion":
+            outDoc['shardOp'] = "findAuto"
+            outDoc['collection'] =  tok[7]
+            outDoc['range'] = getShardRange(tok,9,jsonObj)
+            return(outDoc)
+        elif tok[4] == "Starting" and tok[5] == "chunk":
+            outDoc['shardOp'] = "startMig"
+            outDoc['collection'] =  tok[8]
+            outDoc['range'] = getShardRange(tok,9,jsonObj)
+            return(outDoc)
+        elif tok[4] == "Queries" and tok[5] == "possibly":
+            outDoc['shardOp'] = "queryPoss"
+            outDoc['collection'] =  tok[8]
+            return(outDoc)
+        elif tok[4] == "Waiting" and tok[5] == "for":
+            outDoc['shardOp'] = "waitRepl"
+            return(outDoc)
+        elif tok[4] == "Scheduling" and tok[5] == "deferred":
+            outDoc['shardOp'] = "schedDef"
+            outDoc['collection'] =  tok[8]
+            outDoc['range'] = getShardRange(tok,10,jsonObj)
+            return(outDoc)
+        elif tok[4] == "Deletion" and tok[5] == "of":
+            outDoc['shardOp'] = "delSched"
+            outDoc['collection'] =  tok[6]
+            outDoc['range'] = getShardRange(tok,8,jsonObj)
+            return(outDoc)
+        elif tok[4] == "Leaving" and tok[5] == "cleanup":
+            outDoc['shardOp'] = "findAuto"
+            outDoc['collection'] =  tok[7]
+            outDoc['range'] = getShardRange(tok,9,jsonObj)
+            return(outDoc)
+        elif tok[4] == "Chunk" and tok[5] == "data":
+            outDoc['shardOp'] = "repSucc"
+            return(outDoc)
+        elif tok[4] == "Scheduling" and tok[5] == "deletion":
+            outDoc['shardOp'] = "schedDel"
+            outDoc['collection'] =  tok[10]
+            outDoc['range'] = getShardRange(tok,12,jsonObj)
+            return(outDoc)
+        elif tok[4] == "Starting" and tok[5] == "receiving":
+            outDoc['shardOp'] = "startRec"
+            outDoc['collection'] =  tok[16]
+            range = {}
+            if tok[11].startswith("JSON"):
+                range['min'] = jsonObj.getJsonVal(tok[11])
+            if tok[13].startswith("JSON"):
+                range['max'] = jsonObj.getJsonVal(tok[13])
+            outDoc['chunk'] = range
+            outDoc['epoch'] =  ObjectId(tok[21])
+            outDoc['source'] = tok[18]
+            return(outDoc)
+        elif tok[4] == "Updating" and tok[5] == "config":
+            outDoc['shardOp'] = "updConfigSet"
+            outDoc['cluster'] =  tok[10]
+            return(outDoc)
+        else:
+            outDoc['shardOp'] = tok[4] + tok[5] + tok[6]
+            outDoc['line'] = newstr
+            print(tok)
+        return None
     elif tok[2] == "CONTROL":
         outstr = ""
         #if (tok[4] == "db") & (tok[5] == "version"):
         #    outstr = "{ type: \"CONTROL\", version: \""+tok[6]+"\"}"
         return None
+    elif (tok[2] == "ACCESS"):
+        connMatch = connection.match(tok[3])
+        if connMatch != None:
+            outDoc["connection"] =  connMatch.group(1)
+        outDoc["user"] = tok[8]
+        return(outDoc)
     elif tok[2] == "REPL":
         outDoc["thread"] = tok[3] 
         if (tok[4]+tok[5] == "appliedop:"):
@@ -797,8 +972,9 @@ def procLine(x,inpath,linecount,shortName):
         return(outDoc)
     return None
 
-def procJSON(x,inpath,linecount,shortName):
+def procJSON(x,inpath,linecount,shortName,timeRange):
     
+    tok = None
     try:
         tok = json.loads(x, object_hook=json_util.object_hook)
     except Exception as err:
@@ -809,19 +985,30 @@ def procJSON(x,inpath,linecount,shortName):
         except Exception as err:
             logger.logInfo("===========\n{}\n{}\n===========".format(x,err))
 
+    if tok == None:
+        return None
+    if isinstance(tok["t"], dict):   # simplejson doesn't handle $date
+        tmps = '{"t" : ' + str(tok["t"]).replace("'",'"')+ '}'
+        tmpd = json.loads(tmps,object_hook=json_util.object_hook)
+        d = tmpd["t"]
+    else:
+        d = tok["t"]
+    if "start" in timeRange and d < timeRange["start"]:
+        return None
+    if "end" in timeRange and d > timeRange["end"]:
+        return True    #nothing more to process here
     
-    d = tok["t"]
     outDoc = { "type": tok["c"], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName}
 
     if tok["c"] == "NETWORK":
         if tok["msg"] == "Connection accepted":
             outDoc["Operation"] = "accept"
-            outDoc["connection"] = tok["attr"]["connectionId"]
+            outDoc["connection"] = "conn"+str(tok["attr"]["connectionId"])
             outDoc["ip_addr"] = tok["attr"]["remote"]
             #print(outstr)
         elif tok["msg"] == "Connection ended":
             outDoc["Operation"] = "end"
-            outDoc["connection"] = tok["attr"]["connectionId"]
+            outDoc["connection"] = tok["ctx"]
             outDoc["ip_addr"] = tok["attr"]["remote"]
             return(outDoc)
         elif tok["msg"] == "client metadata":
@@ -830,9 +1017,22 @@ def procJSON(x,inpath,linecount,shortName):
             outDoc["ip_addr"] = tok["attr"]["remote"]
             outDoc["connection_info"] = tok["attr"]["doc"]
             return(outDoc)
+        else:
+            outDoc["thread"] = tok["ctx"] 
+            if "msg" in tok:
+                outDoc["message"] = tok["msg"]
+            if "attr" in tok:
+                outDoc["Details"] = tok["attr"]
+            return(outDoc)
         return None
     elif tok["c"] == "CONTROL":
         return None
+    elif tok["c"] == "-" or tok["c"] == "ACCESS":
+        outDoc["connection"]  = tok["ctx"]
+        outDoc["message"] = tok["msg"]
+        if "attr" in tok:
+            outDoc["attr"] = tok["attr"]
+        return(outDoc)
     elif tok["c"] == "REPL":
         outDoc["thread"] = tok["ctx"] 
         if (tok["msg"] == "Applied op"):
@@ -842,9 +1042,35 @@ def procJSON(x,inpath,linecount,shortName):
             outDoc["message"] = tok["msg"]
             if "attr" in tok:
                 outDoc["Details"] = tok["attr"]
-        return(outDoc)         
+        return(outDoc)   
+    elif tok["c"] == "SHARDING":
+        outDoc["thread"] = tok["ctx"] 
+        outDoc["message"] = tok["msg"]
+        if "attr" in tok:
+            outDoc["Details"] = tok["attr"]
+        return(outDoc)  
+    elif tok["c"] == "SH_REFR":
+        outDoc["thread"] = tok["ctx"] 
+        outDoc["message"] = tok["msg"]
+        if "attr" in tok:
+            outDoc["Details"] = tok["attr"]
+        return(outDoc)    
+    elif tok["c"] == "ELECTION":
+        outDoc["thread"] = tok["ctx"] 
+        outDoc["message"] = tok["msg"]
+        if "attr" in tok:
+            outDoc["Details"] = tok["attr"]
+        return(outDoc)   
+    elif tok["c"] == "TXN":
+        outDoc["connection"] = tok["ctx"] 
+        if (tok["msg"] == "transaction"):
+            outDoc["attr"] = tok["attr"]
+        else:
+            outDoc["message"] = tok["msg"]
+            if "attr" in tok:
+                outDoc["Details"] = tok["attr"]
     elif (tok["c"] == "COMMAND") | (tok["c"] == "WRITE"):
-        outDoc["connection"] =  tok["id"]
+        outDoc["connection"] =  tok["ctx"]
         if (tok["msg"] != "Slow query"):
             outDoc["msg"] = tok["msg"]
             if "attr" in tok:
@@ -877,7 +1103,7 @@ def procJSON(x,inpath,linecount,shortName):
                         else:
                             filter = None
                             break
-                        if isinstance(filter, list):
+                        if isinstance(filter, list) and len(filter) > 0:
                             filter = filter[0]
                     if filter != None:
                         outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
@@ -995,9 +1221,42 @@ def procJSON(x,inpath,linecount,shortName):
                 outDoc["Ratio"] = outDoc["docsExamined"]/outDoc["nreturned"]
             except Exception:
                 pass
-
+        waitDoc = None
+        if "locks" in outDoc:
+            waitDoc = waitTime(outDoc["locks"],"locks")
+        if "storage" in outDoc:
+            waitDoc = waitTime(outDoc["storage"],"storage", waitDoc)
+        if waitDoc != None:
+            outDoc["Waits"] = waitDoc
+    else:
+        connMatch = connection.match(tok["ctx"])
+        if connMatch != None:
+            outDoc["connection"] = connMatch.group(1)
+        if "attr" in tok:
+            outDoc["attr"] = tok["attr"]
+        if "msg" in tok:
+            outDoc["msg"] = tok["msg"]
+        if "ctx" in tok:
+            outDoc["ctx"] = tok["ctx"]
         return(outDoc)
-    return None
+    if "attr" in outDoc:
+        if "lsid" in outDoc['attr']:
+            if "id" in outDoc["attr"]["lsid"]:
+              outDoc["sessionId"] = outDoc["attr"]["lsid"]["id"]
+        if "txnNumber" in outDoc['attr']:
+            outDoc["txnNumber"] = outDoc["attr"]["txnNumber"]
+        if "parameters" in outDoc['attr']:      
+            if "lsid" in outDoc['attr']["parameters"]:
+                if "id" in outDoc["attr"]["parameters"]["lsid"]:
+                  outDoc["sessionId"] = outDoc["attr"]["parameters"]["lsid"]["id"]
+            if "txnNumber" in outDoc['attr']["parameters"]:
+                outDoc["txnNumber"] = outDoc["attr"]["parameters"]["txnNumber"]
+    if "durationMillis" in outDoc:
+        if not isinstance(outDoc["ts"], datetime.datetime):
+            print(outDoc["ts"])
+        else:
+            outDoc["startTS"] = outDoc["ts"] - datetime.timedelta(milliseconds=outDoc["durationMillis"])
+    return outDoc
 
 def fmtArray(array):
     arrayShape = "[ "
@@ -1125,6 +1384,40 @@ def fixDollar(indoc):
     #print(newdoc)
     return newdoc
 
+def waitTime(indoc, root, previous = None):
+
+    isWait,time,names = gotWaiting(indoc,0, False, [], root)
+    if isWait:
+        if previous is None:
+           results = {'totWaitTimeMicros': time, 'locksWaited': names}
+        else:
+            results['totWaitTimeMicros'] += time
+            results['locksWaited'].append(names)
+        return(results)
+    else:
+        return(previous)
+
+def gotWaiting(indoc, time, isWait, names, path):
+    keyNames = ["timeReadingMicros","timeWritingMicros","timeWaitingMicros"]
+
+    for keyName in indoc:
+        if keyName in keyNames:
+            if isinstance(indoc[keyName],dict):
+                for lockName in indoc[keyName]:
+                    isWait = True    
+                    time += indoc[keyName][lockName]
+                    names.append(path+"."+lockName+"."+keyName)
+            else:
+                isWait = True    
+                time += indoc[keyName]
+                names.append(path+"."+keyName)
+        elif isinstance(indoc[keyName],dict):
+            nIsWait,nTime,nNames = gotWaiting(indoc[keyName],time, isWait, names, path+"."+keyName)
+            if nIsWait:
+                isWait = True
+                time += nTime
+    return(isWait,time, names)
+
 def valid_date(s):
     try:
         if len(s) < 11:
@@ -1172,19 +1465,24 @@ USAGE
         parser.add_argument("--debug", dest="debug", action="store_true", help="debug")
         parser.add_argument('--logfile', '-l', dest="logFile", metavar='logFile', help="Redirect Messages to a file")
         parser.add_argument('--failurefile', '-ff', dest="failFile", metavar='failFile', help="Save errors to a file")
+        parser.add_argument("--startdate", dest="start", metavar="Start From", help="The Start Date - format YYYY-MM-DD", type=valid_date)
+        parser.add_argument("--enddate", dest="end", metavar="Start From", help="The Start Date - format YYYY-MM-DD", type=valid_date)
         parser.add_argument('-V', '--version', action='version', version=program_version_message)
         parser.add_argument('--iso8859', dest="isoEncoding", action="store_true", help="Input file is ISO-8859-1 rather than UTF-8")
         parser.add_argument('--URI', dest="URI", metavar='uri', help="MongoDb database URI")
         parser.add_argument('-c', '--coll', dest="coll", metavar='coll', help="Collection to import into")
         parser.add_argument('--namePattern', dest="namePat", metavar='pattern', help="Regex to match the short name")
-        parser.add_argument("-s", "--startdate", dest="start", metavar="Start From", help="The Start Date - format YYYY-MM-DD", type=valid_date)
+        parser.add_argument('--wrapper', dest="wrapper", metavar='wrapper', help="Regex to strip any wrapper")
         parser.add_argument(dest="paths", help="paths to folder(s) with source file(s) [default: %(default)s]", metavar="path", nargs='+')
 
         # Process arguments
         args = parser.parse_args()
         #print(args.URI)
         paths = args.paths
-        print(args.start)
+        procrange = {}
+        wrapper = None
+
+            
         if args.debug:
             logLevel = myLogger.DEBUG
         elif args.verbose:
@@ -1194,7 +1492,20 @@ USAGE
         
         logger = myLogger("logParser",file=args.logFile,datafile=args.failFile,severity=logLevel)
 
+        if args.start != None:
+            procrange["start"] = args.start
+        if args.end != None:
+            procrange["end"] = args.end
+            if (args.start != None) and (args.start > args.end):
+                logger.logError("Start {} is after End {}".format(args.start,args.end))
+                exit()
             
+        if args.wrapper != None and ("(" in args.wrapper):
+            try:
+                wrapper = re.compile(args.wrapper)
+            except Exception as err:
+                print('Error parsing Wrapper "{}": {}'.format(args.wrapper,err))
+                        
         logger.logInfo("Got "+paths[0])
 
         myClient = pymongo.MongoClient(args.URI) 
@@ -1228,69 +1539,98 @@ USAGE
                 shortName = os.path.basename(inpath)
             else:
                 nameMatch = namePat.search(inpath)
-                shortName = nameMatch.group(1)
+                if (nameMatch == None) or (nameMatch.group(1) == None): 
+                    print("No short name match using {} for {}".format(args.namePat,inpath))
+                    shortName = os.path.basename(inpath)
+                else:
+                    shortName = nameMatch.group(1)
             print("Processing {} imported as {}".format(inpath,shortName))
             docBuf = []
             
             #Readahead  the first line
             lineBuffer = f.readline().rstrip()  
             linecount = 0
+            lastentry = None
+            reportwrapfail = True
+            ret = None
             #loop reading next line, current is in x
             for newline in f:
               linecount += 1
               if (linecount % 10000) == 0:
-                  print(linecount)
-              # next line is a new entry so process the buffer in x
-              if newentry.match(newline):
-                  try:
-                      ret = procLine(lineBuffer,inpath,linecount,shortName)
-                  except Exception as progEx:
-                    _, exceptionObject, tb  = sys.exc_info()
-                    stackSummary = traceback.extract_tb(tb,3)
-                    frameSummary = stackSummary[0]
-                    for frame in stackSummary:
-                        print(frame)
-                    logline = '{}:{} in inputfile {} line {}.'\
-                       .format(progEx.__class__.__name__,frameSummary.lineno,inpath,linecount)
-                    logger.logInfo(stackSummary)
-                    logger.logError(logline)
-                    logger.logLine(lineBuffer)
+                  if lastentry != None:
+                      print("Line: {} at {}".format(linecount,lastentry))
                   else:
+                      print("{} lines skipped".format(linecount))
+              # next line is a new entry so process the buffer in x
+              if wrapper != None:
+                  nameMatch = wrapper.search(newline)
+                  if (nameMatch == None) or (nameMatch.group(1) == None): 
+                      if reportwrapfail:
+                          logger.logWarning("No wrapper match using {} for {}".format(args.wrapper,newline))
+                          reportwrapfail = False
+                      else:
+                          logger.logInfo("No wrapper match using {} for {}".format(args.wrapper,newline))
+                  else:
+                      newline = nameMatch.group(1)
+              if newentry.match(newline) or jsonentry.match(newline):
+                  if newentry.match(lineBuffer):
+                      try:
+                          ret = procLine(lineBuffer,inpath,linecount,shortName,procrange)
+                      except Exception as progEx:
+                        _, exceptionObject, tb  = sys.exc_info()
+                        stackSummary = traceback.extract_tb(tb,3)
+                        frameSummary = stackSummary[0]
+                        for frame in stackSummary:
+                            print(frame)
+                        logline = '{}:{} in inputfile {} line {}.'\
+                           .format(progEx.__class__.__name__,frameSummary.lineno,inpath,linecount)
+                        logger.logInfo(stackSummary)
+                        logger.logError(logline)
+                        logger.logLine(lineBuffer)
+                      else:
+                          if ret != None:
+                              if ret == True:
+                                  break
+                              lastentry = ret["ts"]
+                              docBuf.append(fixDollar(ret))
+                      if len(docBuf) >= 1000:
+                          try:
+                              mycol.insert_many(docBuf,ordered=False)
+                          except Exception as err:
+                              print(err)
+    
+                              print(docBuf)
+                          docBuf[:] = []
+                          
+                      #done with x move the readahead into x 
+                  elif jsonentry.match(lineBuffer):
+                      ret = procJSON(lineBuffer,inpath,linecount,shortName,procrange)
                       if ret != None:
+                          if ret == True:
+                              break
+                          lastentry = ret["ts"]
                           docBuf.append(fixDollar(ret))
-                  if len(docBuf) >= 1000:
-                      try:
-                          mycol.insert_many(docBuf,ordered=False)
-                      except Exception as err:
-                          print(err)
-
-                          print(docBuf)
-                      docBuf[:] = []
-                      
-                  #done with x move the readahead into x 
-                  lineBuffer = newline
-              elif jsonentry.match(newline):
-                  ret = procJSON(lineBuffer,inpath,linecount,shortName)
-                  if ret != None:
-                      docBuf.append(fixDollar(ret))
-                  if len(docBuf) >= 1000:
-                      try:
-                          mycol.insert_many(docBuf,ordered=False)
-                      except Exception as err:
-                          print(err)
-
-                          print(docBuf)
-                      docBuf[:] = []
+                      if len(docBuf) >= 1000:
+                          try:
+                              mycol.insert_many(docBuf,ordered=False)
+                          except Exception as err:
+                              print(err)
+    
+                              print(docBuf)
+                          docBuf[:] = []
                   lineBuffer = newline
               else:
                   # multi line log entry append 
                   lineBuffer += newline
             #Process the last line
             try:
-                if newentry.match(lineBuffer):
-                    ret = procLine(lineBuffer,inpath,linecount,shortName)
-                elif jsonentry.match(lineBuffer):
-                    ret = procJSON(lineBuffer,inpath,linecount,shortName)
+                if ret != True:
+                    if newentry.match(lineBuffer):
+                        ret = procLine(lineBuffer,inpath,linecount,shortName,procrange)
+                    elif jsonentry.match(lineBuffer):
+                        ret = procJSON(lineBuffer,inpath,linecount,shortName,procrange)
+                    else:
+                        ret = None
             except Exception as progEx:
                 _, exceptionObject, tb  = sys.exc_info()
                 stackSummary = traceback.extract_tb(tb,1)
@@ -1301,7 +1641,7 @@ USAGE
                 logger.logError(logline)
                 logger.logLine(lineBuffer)
             else:
-                if ret != None:
+                if (ret != None) and (ret != True):
                     docBuf.append(ret) 
             if len(docBuf) > 0:
                 try:
@@ -1309,13 +1649,15 @@ USAGE
                 except Exception as err:
                     print(err)
                     print(docBuf)
-                    docBuf[:] = []
+                    
+                docBuf[:] = []
             f.close()
         try:
             x = mydb["internal"].insert_one({"cmd": cmdTypes, "strings": strTypes, "keywords": keyTypes})
         except Exception as err:
             print(err)
-            
+        if len(jsonTypes) > 0:
+            print(jsonTypes)
         return 0
     except KeyboardInterrupt:
         print('key')
@@ -1330,9 +1672,11 @@ USAGE
         sys.stderr.write(program_name + ": " + repr(e) + "\n")
         sys.stderr.write(indent + "  for help use --help")
         return 2
-
+    if len(jsonTypes) > 0:
+        print(jsonTypes)
 if __name__ == "__main__":
     sys.exit(main())    
           
           
+
 
