@@ -1,5 +1,6 @@
 function allCollStats(server) {
-db.getCollectionNames().forEach(function(collection) {
+db.getCollectionInfos({type: "collection"},true).forEach(function(coll) {
+   collection = coll.name;
    print('{ _id: {Server: "'+server+'", DB: "' + db + '",Collection: "' + collection + '"},');
    stats = db[collection].stats();
    print("     NumIndexes: "+stats.nindexes+",");
