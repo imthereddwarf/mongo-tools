@@ -305,7 +305,7 @@ class importFromCompass:
             nameLen = len(indent+fldName)+7 # Include (100%) suffix
             if self.maxNameLen < nameLen:
                 self.maxNameLen = nameLen  
-            if ("types" in fld):
+            if ("types" in fld) and len(fld["types"]) > 0 :
                 if (fld["types"][0]["name"] == "Array"):
                     types.append(typeFrequency("Array",100))
                     subdoc = fld["types"]

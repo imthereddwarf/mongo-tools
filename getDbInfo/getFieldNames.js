@@ -1,0 +1,87 @@
+let skipDB = ["admin","config","test", "local"];
+const skipColl = ["system.views"];
+sampleSize = 5;
+
+//
+// Insert a Regex pattern here
+//
+myPat = /(name|inserted)/i
+
+function getDocKeys(pattern,doc,prefix) {
+    let matches = {};
+    let myprefix = ""
+    if (prefix != null) {
+	myprefix = prefix + ".";
+    }
+    let myDoc = doc;
+    for (const key in myDoc) {
+	myKey = key;
+	if (myPat.test(key)) {
+	    matches[myprefix+key] = true;
+	}
+	let submatch = {};
+	if (typeof doc[key] === 'array') {
+	    for (const elem in doc[key])
+		submatch = getDocKeys(pattern,elem,myprefix+"$");
+	}
+	if ((typeof doc[key] === 'object') && ! ( doc[key] instanceof ObjectId)){
+	    submatch = getDocKeys(pattern,doc[key],myprefix+key);
+	}
+	if (Object.keys(submatch).length > 0) {
+	    for (const subKey in submatch)
+		matches[subKey] = 1;
+	}
+			
+    }
+mydoc = {accountId: 2113651, deviceId: 16679069, eventDate: new Date()}
+db.chunks.aggregate([{$match: {$expr: {$and: [{$eq: ["$ns", "deviceState.deviceState"]},
+						    {$and: [{$lte: ["$min", myDoc]}, {$gt: ["$max", myDoc]}]}]}}},
+		     {$project: {shard:1,_id:0, min: "$min", max: "$max"}},{$sort: {min:1}}])    return(matches);
+}
+
+function allCollKeys(pattern) {
+    db.getCollectionInfos({type: "collection"},true).forEach(function(coll) {
+	collection = coll.name;
+	ns = db.getName() + "." + collection;
+	matches = {};
+	try {
+	    if (skipColl.indexOf(collection) == -1) {
+		db[collection].aggregate([{$sample: {size: sampleSize}}]).forEach( doc => {
+		    let myDoc = doc;
+		    matches = getDocKeys(pattern,doc,null);
+		})
+	    }
+	} catch (error) {
+	    for (const em in error) {
+		print(em);
+	    }
+	    print(ns+": "+error.code);
+	}
+        if (Object.keys(matches).length > 0) {
+	    for (var match in matches) {
+		print(ns+": "+match);
+	    }
+	} else {
+	    print(ns+": No Matches");
+	}							     
+
+    })
+}
+
+
+
+// Switch to admin database and get list of databases.
+db = db.getSiblingDB("admin");
+print("--CUT HERE--");
+let dbs = db.runCommand({ "listDatabases": 1 }).databases;
+
+// Iterate through each database and get its collections.
+dbs.forEach(function(database) {
+    db = db.getSiblingDB(database.name);
+    db.getName();
+    if (skipDB.indexOf(db.getName()) == -1)
+	allCollKeys(myPat);
+
+});
+
+

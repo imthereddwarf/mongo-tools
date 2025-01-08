@@ -1,0 +1,7 @@
+SourceConnection=mongodb+srv://petew:h9WiU$eJSKxmm$@venmo-psgxh.mongodb.net/test?retryWrites=true&w=majority
+#SourceConnection=mongodb+srv://petew:h9WiU$eJSKxmm$@spireonprod.psgxh.mongodb.net/test?retryWrites=true&w=majority
+#SourceConnection=mongodb+srv://petew:h9WiU%24eJSKxmm%24@spireon.psgxh.mongodb.net/test
+#SourceConnection=mongodb://localhost:27017/Venmo?retryWrites=true&w=majority
+SourceDatabase=wells
+SourceCollection=jun30
+

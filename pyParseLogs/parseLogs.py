@@ -18,6 +18,8 @@ It defines classes_and_methods
 import pymongo
 from bson import json_util
 from bson.objectid import ObjectId
+from decimal import Decimal
+from bson.decimal128 import Decimal128
 import json, re
 import simplejson
 import datetime
@@ -72,6 +74,7 @@ imbedquote = re.compile(": *(\"[^\"]*\"[^\"]*\")([,}])");
 smallNumber = re.compile(": *([+-]?[0-9]+e-?[0-9]+.[0-9]+)");
 bindata = re.compile("BinData\\([0-9], ([0-9A-F.]*)\\)");
 connection = re.compile("\[conn([0-9]*)\]");
+newconn = re.compile("[con]*([0-9]+)");
 ipport = re.compile("([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*):([0-9]*)")
 logKey = re.compile("^[a-zA-Z]*:$")
 embedcolon = re.compile("^:({[ }]|[0-9]* )")
@@ -591,7 +594,7 @@ def parseLine(tok,j,jsonObj):
             j=j+1
     return outDoc
 
-def procLine(x,inpath,linecount,shortName,timeRange):
+def procLine(x,inpath,linecount,shortName,timeRange,nodeType):
     
     level = 0
     position = 0
@@ -652,6 +655,8 @@ def procLine(x,inpath,linecount,shortName,timeRange):
         return True  #all done in this file
     
     outDoc = { "type": tok[2], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName}
+    if nodeType != None:
+        outDoc["nodeType"] = nodeType
 
     
     if tok[2] == "NETWORK":
@@ -972,7 +977,7 @@ def procLine(x,inpath,linecount,shortName,timeRange):
         return(outDoc)
     return None
 
-def procJSON(x,inpath,linecount,shortName,timeRange):
+def procJSON(x,inpath,linecount,shortName,timeRange,header,nodeType):
     
     tok = None
     try:
@@ -999,23 +1004,39 @@ def procJSON(x,inpath,linecount,shortName,timeRange):
         return True    #nothing more to process here
     
     outDoc = { "type": tok["c"], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName}
+    if nodeType != None:
+        outDoc["nodeType"] = nodeType
+    if "hostname" in header:
+        outDoc["host"] = header["hostname"]
 
     if tok["c"] == "NETWORK":
+        if "attr" in tok:
+            if "remote" in tok["attr"]:
+                ipmatch = ipport.match(tok["attr"]["remote"])
+                outDoc['ip_addr'] = ipmatch.group(1)
         if tok["msg"] == "Connection accepted":
             outDoc["Operation"] = "accept"
             outDoc["connection"] = "conn"+str(tok["attr"]["connectionId"])
-            outDoc["ip_addr"] = tok["attr"]["remote"]
+            outDoc["Count"] = tok["attr"]["connectionCount"]
+            return(outDoc)
             #print(outstr)
         elif tok["msg"] == "Connection ended":
             outDoc["Operation"] = "end"
             outDoc["connection"] = tok["ctx"]
-            outDoc["ip_addr"] = tok["attr"]["remote"]
             return(outDoc)
         elif tok["msg"] == "client metadata":
             outDoc["Operation"] = "start"
             outDoc["connection"] = tok["attr"]["client"]
-            outDoc["ip_addr"] = tok["attr"]["remote"]
             outDoc["connection_info"] = tok["attr"]["doc"]
+            return(outDoc)
+        elif tok['msg'] == "recv(): message mstLen is invalid.":
+            outDoc["thread"] = tok["ctx"] 
+            if "msg" in tok:
+                outDoc["message"] = tok["msg"]
+            if "attr" in tok:
+                outDoc["Details"] = tok["attr"]
+                if outDoc["Details"]['msgLen'] > 9223372036854775807:
+                    outDoc["Details"]['msgLen'] = Decimal128(Decimal(tok['attr']['msgLen']))
             return(outDoc)
         else:
             outDoc["thread"] = tok["ctx"] 
@@ -1026,6 +1047,23 @@ def procJSON(x,inpath,linecount,shortName,timeRange):
             return(outDoc)
         return None
     elif tok["c"] == "CONTROL":
+        if tok["msg"] == "Process Details":
+            # update the dict passed in, we can't create a new dict
+            header.clear()
+            header["type"] = "HEADERS"
+            header["ts"] =  d
+            header[ "infile"] =  inpath
+            header[ "lineno"] = linecount
+            header[ "shortName"] = shortName
+            header[ "isNew"] =  True
+            header["Process"] = tok["attr"]
+            header["hostname"] = tok["attr"]["host"]
+        elif tok["msg"] == "Build Info":
+            header["Build"] = tok["attr"]
+        elif tok["msg"] == "Operating System":
+            header["OS"] = tok["attr"]
+        elif tok["msg"] == "Options set by command line":
+            header["CmdLine"] = tok["attr"]
         return None
     elif tok["c"] == "-" or tok["c"] == "ACCESS":
         outDoc["connection"]  = tok["ctx"]
@@ -1117,7 +1155,8 @@ def procJSON(x,inpath,linecount,shortName,timeRange):
             outDoc["Object"] = obj
             outDoc["Command"] = cmdType
             outDoc["cursor"] = cursor
-            outDoc["batchSize"] = attr["command"]["batchSize"]
+            if "BatchSize" in attr["command"]:
+                outDoc["batchSize"] = attr["command"]["batchSize"]
             cmdData = attr["originatingCommand"]
             if isinstance(cmdData,dict):
                 if orgCmd in filterLocations:
@@ -1187,7 +1226,10 @@ def procJSON(x,inpath,linecount,shortName,timeRange):
             else:
                 print("Error parsing command: in {} on line {}".format(inpath,linecount))
         else:
-            print("Unexpected type "+attr["type"])
+            outDoc["Command"] = attr["type"]
+            if "ns" in attr:
+                outDoc["Object"] = attr["ns"].split(".")[1]
+
         for key in attr:
             if (key != "type") & (key != "command"):
                 outDoc[key] = attr[key]
@@ -1535,6 +1577,7 @@ USAGE
             if args.isoEncoding:
                 fileEncoding= "ISO-8859-1"
             f = open(inpath, "r",encoding = fileEncoding)
+            nodeType = None
             if namePat == None:
                 shortName = os.path.basename(inpath)
             else:
@@ -1544,8 +1587,11 @@ USAGE
                     shortName = os.path.basename(inpath)
                 else:
                     shortName = nameMatch.group(1)
+            #        if len(nameMatch.group()) > 1:
+            #            nodeType = nameMatch.group(2)
             print("Processing {} imported as {}".format(inpath,shortName))
             docBuf = []
+            headers = {"isNew": False}
             
             #Readahead  the first line
             lineBuffer = f.readline().rstrip()  
@@ -1575,7 +1621,7 @@ USAGE
               if newentry.match(newline) or jsonentry.match(newline):
                   if newentry.match(lineBuffer):
                       try:
-                          ret = procLine(lineBuffer,inpath,linecount,shortName,procrange)
+                          ret = procLine(lineBuffer,inpath,linecount,shortName,procrange,nodeType)
                       except Exception as progEx:
                         _, exceptionObject, tb  = sys.exc_info()
                         stackSummary = traceback.extract_tb(tb,3)
@@ -1604,11 +1650,14 @@ USAGE
                           
                       #done with x move the readahead into x 
                   elif jsonentry.match(lineBuffer):
-                      ret = procJSON(lineBuffer,inpath,linecount,shortName,procrange)
+                      ret = procJSON(lineBuffer,inpath,linecount,shortName,procrange,headers,nodeType)
                       if ret != None:
                           if ret == True:
                               break
                           lastentry = ret["ts"]
+                          if headers["isNew"]:
+                              docBuf.append(fixDollar(headers))
+                              headers["isNew"] = False
                           docBuf.append(fixDollar(ret))
                       if len(docBuf) >= 1000:
                           try:
@@ -1626,9 +1675,9 @@ USAGE
             try:
                 if ret != True:
                     if newentry.match(lineBuffer):
-                        ret = procLine(lineBuffer,inpath,linecount,shortName,procrange)
+                        ret = procLine(lineBuffer,inpath,linecount,shortName,procrange,nodeType)
                     elif jsonentry.match(lineBuffer):
-                        ret = procJSON(lineBuffer,inpath,linecount,shortName,procrange)
+                        ret = procJSON(lineBuffer,inpath,linecount,shortName,procrange,headers,nodeType)
                     else:
                         ret = None
             except Exception as progEx:
@@ -1678,5 +1727,6 @@ if __name__ == "__main__":
     sys.exit(main())    
           
           
+
 
 

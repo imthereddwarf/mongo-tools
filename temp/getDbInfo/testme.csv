@@ -1,0 +1,895 @@
+{ _id: {Server: "pete", DB: "all", Collection: "all"},
+    runTime: ISODate("2020-10-26T18:24:11.313Z"),
+   Tags: 
+{
+	"workloadType" : "OPERATIONAL",
+	"region" : "US_WEST_1",
+	"nodeType" : "ELECTABLE",
+	"provider" : "AWS"
+}
+, Databaselist: 
+[
+	{
+		"name" : "EddieBauer",
+		"sizeOnDisk" : 764887040,
+		"empty" : false
+	},
+	{
+		"name" : "Hotwire",
+		"sizeOnDisk" : 712060928,
+		"empty" : false
+	},
+	{
+		"name" : "admin",
+		"sizeOnDisk" : 335872,
+		"empty" : false
+	},
+	{
+		"name" : "changeStream",
+		"sizeOnDisk" : 147456,
+		"empty" : false
+	},
+	{
+		"name" : "config",
+		"sizeOnDisk" : 167936,
+		"empty" : false
+	},
+	{
+		"name" : "email",
+		"sizeOnDisk" : 2605056,
+		"empty" : false
+	},
+	{
+		"name" : "flexport",
+		"sizeOnDisk" : 135168,
+		"empty" : false
+	},
+	{
+		"name" : "home",
+		"sizeOnDisk" : 927088640,
+		"empty" : false
+	},
+	{
+		"name" : "ima",
+		"sizeOnDisk" : 89288704,
+		"empty" : false
+	},
+	{
+		"name" : "local",
+		"sizeOnDisk" : 814891008,
+		"empty" : false
+	},
+	{
+		"name" : "prod",
+		"sizeOnDisk" : 73728,
+		"empty" : false
+	},
+	{
+		"name" : "ptest",
+		"sizeOnDisk" : 155648,
+		"empty" : false
+	},
+	{
+		"name" : "safeway",
+		"sizeOnDisk" : 3623837696,
+		"empty" : false
+	},
+	{
+		"name" : "spireon",
+		"sizeOnDisk" : 97906688,
+		"empty" : false
+	},
+	{
+		"name" : "svb",
+		"sizeOnDisk" : 152666112,
+		"empty" : false
+	},
+	{
+		"name" : "test",
+		"sizeOnDisk" : 8192,
+		"empty" : false
+	},
+	{
+		"name" : "videos",
+		"sizeOnDisk" : 73728,
+		"empty" : false
+	},
+	{
+		"name" : "wine",
+		"sizeOnDisk" : 1355776,
+		"empty" : false
+	},
+	{
+		"name" : "zingbox",
+		"sizeOnDisk" : 2083225600,
+		"empty" : false
+	}
+]
+}
+{ _id: {Server: "pete", DB: "EddieBauer",Collection: "apr02"},
+2020-10-26T11:24:11.425-0700 I  NETWORK  [js] Successfully connected to petesdata-shard-00-00.psgxh.mongodb.net:27017 (1 connections now open to petesdata-shard-00-00.psgxh.mongodb.net:27017 with a 0 second timeout)
+     NumIndexes: 2,
+     totalIndexSize: 12288,
+     size: 0,
+     count: 0,
+     avgObjSize: undefined,
+     storageSize: 4096,
+     collectedAt: ISODate("2020-10-26T18:24:11.436Z"),
+     indexSizes: 
+{ "_id_" : 4096, "filter_1" : 8192 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.277Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "EddieBauer.apr02"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "filter_1",
+	"key" : {
+		"filter" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.277Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"filter" : 1
+		},
+		"name" : "filter_1",
+		"ns" : "EddieBauer.apr02"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "EddieBauer",Collection: "channels"},
+     NumIndexes: 3,
+     totalIndexSize: 61440,
+     size: 162,
+     count: 2,
+     avgObjSize: 81,
+     storageSize: 20480,
+     collectedAt: ISODate("2020-10-26T18:24:11.463Z"),
+     indexSizes: 
+{
+	"_id_" : 20480,
+	"userId_1_channel_1_isSoftDeleted_1" : 20480,
+	"userId_1_channel_1" : 20480
+}
+,     indexStats: [
+{
+	"name" : "userId_1_channel_1_isSoftDeleted_1",
+	"key" : {
+		"userId" : 1,
+		"channel" : 1,
+		"isSoftDeleted" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.280Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"userId" : 1,
+			"channel" : 1,
+			"isSoftDeleted" : 1
+		},
+		"name" : "userId_1_channel_1_isSoftDeleted_1",
+		"background" : true,
+		"ns" : "EddieBauer.channels"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.280Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "EddieBauer.channels"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "userId_1_channel_1",
+	"key" : {
+		"userId" : 1,
+		"channel" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.280Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"userId" : 1,
+			"channel" : 1
+		},
+		"name" : "userId_1_channel_1",
+		"background" : true,
+		"partialFilterExpression" : {
+			"isSoftDeleted" : 1
+		},
+		"ns" : "EddieBauer.channels"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "EddieBauer",Collection: "jul27_prod"},
+     NumIndexes: 1,
+     totalIndexSize: 163840,
+     size: 33675562,
+     count: 16301,
+     avgObjSize: 2065,
+     storageSize: 8630272,
+     collectedAt: ISODate("2020-10-26T18:24:11.482Z"),
+     indexSizes: 
+{ "_id_" : 163840 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.280Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "EddieBauer.jul27_prod"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "EddieBauer",Collection: "prod_mar30"},
+     NumIndexes: 3,
+     totalIndexSize: 98304,
+     size: 15720753,
+     count: 2437,
+     avgObjSize: 6450,
+     storageSize: 3956736,
+     collectedAt: ISODate("2020-10-26T18:24:11.502Z"),
+     indexSizes: 
+{ "_id_" : 40960, "PLAN_1" : 28672, "Plan_1" : 28672 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.276Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "EddieBauer.prod_mar30"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "Plan_1",
+	"key" : {
+		"Plan" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.276Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"Plan" : 1
+		},
+		"name" : "Plan_1",
+		"ns" : "EddieBauer.prod_mar30"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "PLAN_1",
+	"key" : {
+		"PLAN" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.276Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"PLAN" : 1
+		},
+		"name" : "PLAN_1",
+		"ns" : "EddieBauer.prod_mar30"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "EddieBauer",Collection: "stage_apr01"},
+     NumIndexes: 1,
+     totalIndexSize: 241664,
+     size: 31634100,
+     count: 23945,
+     avgObjSize: 1321,
+     storageSize: 5554176,
+     collectedAt: ISODate("2020-10-26T18:24:11.521Z"),
+     indexSizes: 
+{ "_id_" : 241664 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.275Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "EddieBauer.stage_apr01"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "EddieBauer",Collection: "stage_apr02"},
+     NumIndexes: 4,
+     totalIndexSize: 22732800,
+     size: 3674469577,
+     count: 937965,
+     avgObjSize: 3917,
+     storageSize: 775163904,
+     collectedAt: ISODate("2020-10-26T18:24:11.542Z"),
+     indexSizes: 
+{
+	"_id_" : 9580544,
+	"Collection_1" : 4325376,
+	"Collection_1_Ratio_1" : 4444160,
+	"Ratio_-1" : 4382720
+}
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.278Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "EddieBauer.stage_apr02"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "Collection_1",
+	"key" : {
+		"Collection" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.278Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"Collection" : 1
+		},
+		"name" : "Collection_1",
+		"background" : false,
+		"ns" : "EddieBauer.stage_apr02"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "Ratio_-1",
+	"key" : {
+		"Ratio" : -1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.278Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"Ratio" : -1
+		},
+		"name" : "Ratio_-1",
+		"background" : false,
+		"ns" : "EddieBauer.stage_apr02"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "Collection_1_Ratio_1",
+	"key" : {
+		"Collection" : 1,
+		"Ratio" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.278Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"Collection" : 1,
+			"Ratio" : 1
+		},
+		"name" : "Collection_1_Ratio_1",
+		"background" : false,
+		"ns" : "EddieBauer.stage_apr02"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "EddieBauer",Collection: "stage_mar22"},
+     NumIndexes: 1,
+     totalIndexSize: 20480,
+     size: 2844482,
+     count: 462,
+     avgObjSize: 6156,
+     storageSize: 712704,
+     collectedAt: ISODate("2020-10-26T18:24:11.561Z"),
+     indexSizes: 
+{ "_id_" : 20480 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.278Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "EddieBauer.stage_mar22"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "EddieBauer",Collection: "tst"},
+     NumIndexes: 1,
+     totalIndexSize: 20480,
+     size: 966,
+     count: 1,
+     avgObjSize: 966,
+     storageSize: 20480,
+     collectedAt: ISODate("2020-10-26T18:24:11.580Z"),
+     indexSizes: 
+{ "_id_" : 20480 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.276Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "EddieBauer.tst"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "Hotwire",Collection: "log1"},
+     NumIndexes: 1,
+     totalIndexSize: 6656000,
+     size: 1461223127,
+     count: 386686,
+     avgObjSize: 3778,
+     storageSize: 269271040,
+     collectedAt: ISODate("2020-10-26T18:24:11.604Z"),
+     indexSizes: 
+{ "_id_" : 6656000 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.282Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "Hotwire.log1"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "Hotwire",Collection: "log2"},
+     NumIndexes: 1,
+     totalIndexSize: 8359936,
+     size: 1118926066,
+     count: 298847,
+     avgObjSize: 3744,
+     storageSize: 221810688,
+     collectedAt: ISODate("2020-10-26T18:24:11.627Z"),
+     indexSizes: 
+{ "_id_" : 8359936 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.281Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "Hotwire.log2"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "Hotwire",Collection: "log3"},
+     NumIndexes: 1,
+     totalIndexSize: 1200128,
+     size: 490358290,
+     count: 127542,
+     avgObjSize: 3844,
+     storageSize: 85897216,
+     collectedAt: ISODate("2020-10-26T18:24:11.645Z"),
+     indexSizes: 
+{ "_id_" : 1200128 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.282Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "Hotwire.log3"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "Hotwire",Collection: "tuesday"},
+     NumIndexes: 1,
+     totalIndexSize: 626688,
+     size: 241165668,
+     count: 60185,
+     avgObjSize: 4007,
+     storageSize: 76935168,
+     collectedAt: ISODate("2020-10-26T18:24:11.663Z"),
+     indexSizes: 
+{ "_id_" : 626688 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.282Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "Hotwire.tuesday"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "Hotwire",Collection: "tuesday2"},
+     NumIndexes: 1,
+     totalIndexSize: 573440,
+     size: 238261799,
+     count: 61285,
+     avgObjSize: 3887,
+     storageSize: 41623552,
+     collectedAt: ISODate("2020-10-26T18:24:11.682Z"),
+     indexSizes: 
+{ "_id_" : 573440 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.281Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "Hotwire.tuesday2"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "changeStream",Collection: "summary"},
+     NumIndexes: 1,
+     totalIndexSize: 36864,
+     size: 471,
+     count: 4,
+     avgObjSize: 117,
+     storageSize: 36864,
+     collectedAt: ISODate("2020-10-26T18:24:11.706Z"),
+     indexSizes: 
+{ "_id_" : 36864 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.285Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "changeStream.summary"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "changeStream",Collection: "watchme"},
+     NumIndexes: 1,
+     totalIndexSize: 36864,
+     size: 77,
+     count: 2,
+     avgObjSize: 38,
+     storageSize: 36864,
+     collectedAt: ISODate("2020-10-26T18:24:11.724Z"),
+     indexSizes: 
+{ "_id_" : 36864 }
+,     indexStats: [
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.286Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "changeStream.watchme"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "email",Collection: "all"},
+     NumIndexes: 3,
+     totalIndexSize: 1646592,
+     size: 1422316,
+     count: 13357,
+     avgObjSize: 106,
+     storageSize: 835584,
+     collectedAt: ISODate("2020-10-26T18:24:11.750Z"),
+     indexSizes: 
+{ "_id_" : 888832, "Email_1" : 405504, "Domain_1_Name_1" : 352256 }
+,     indexStats: [
+{
+	"name" : "Domain_1_Name_1",
+	"key" : {
+		"Domain" : 1,
+		"Name" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.288Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"Domain" : 1,
+			"Name" : 1
+		},
+		"name" : "Domain_1_Name_1",
+		"background" : false,
+		"ns" : "email.all"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "_id_",
+	"key" : {
+		"_id" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.288Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"_id" : 1
+		},
+		"name" : "_id_",
+		"ns" : "email.all"
+	},
+	"v" : 2
+}
+,
+{
+	"name" : "Email_1",
+	"key" : {
+		"Email" : 1
+	},
+	"host" : "atlas-girenx-shard-00-00.psgxh.mongodb.net:27017",
+	"accesses" : {
+		"ops" : NumberLong(0),
+		"since" : ISODate("2020-10-07T14:14:26.288Z")
+	},
+	"spec" : {
+		"v" : 2,
+		"key" : {
+			"Email" : 1
+		},
+		"name" : "Email_1",
+		"background" : false,
+		"ns" : "email.all"
+	},
+	"v" : 2
+}
+]}
+{ _id: {Server: "pete", DB: "flexport",Collection: "system.views"},
+     NumIndexes: 1,
+     totalIndexSize: 20480,
+     size: 103,
+     count: 1,
+     avgObjSize: 103,
+     storageSize: 20480,
+     collectedAt: ISODate("2020-10-26T18:24:11.776Z"),
+     indexSizes: 
+{ "_id_" : 20480 }
+,     indexStats: [
+2020-10-26T11:24:11.788-0700 E  QUERY    [js] uncaught exception: Error: command failed: {
+	"operationTime" : Timestamp(1603736644, 1),
+	"ok" : 0,
+	"errmsg" : "not authorized on flexport to execute command { aggregate: \"system.views\", pipeline: [ { $indexStats: {} } ], cursor: {}, lsid: { id: UUID(\"33dcb957-5f72-4cfd-9382-a6faa84f5e03\") }, $clusterTime: { clusterTime: Timestamp(1603736644, 1), signature: { hash: BinData(0, AB692EAED442FBEAD4F8155D8FBAEC10A92F1BF4), keyId: 6857288671045877763 } }, $readPreference: { mode: \"secondaryPreferred\" }, $db: \"flexport\" }",
+	"code" : 13,
+	"codeName" : "Unauthorized",
+	"$clusterTime" : {
+		"clusterTime" : Timestamp(1603736644, 1),
+		"signature" : {
+			"hash" : BinData(0,"q2kurtRC++rU+BVdj7rsEKkvG/Q="),
+			"keyId" : NumberLong("6857288671045877763")
+		}
+	}
+} : aggregate failed :
+_getErrorWithCode@src/mongo/shell/utils.js:25:13
+doassert@src/mongo/shell/assert.js:18:14
+_assertCommandWorked@src/mongo/shell/assert.js:583:17
+assert.commandWorked@src/mongo/shell/assert.js:673:16
+DB.prototype._runAggregate@src/mongo/shell/db.js:266:5
+DBCollection.prototype.aggregate@src/mongo/shell/collection.js:1012:12
+allCollStats/<@./allCollStats.js:18:17
+allCollStats@./allCollStats.js:2:1
+@(shell):5:5
+@(shell):1:1

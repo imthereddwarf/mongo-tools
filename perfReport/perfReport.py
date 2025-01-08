@@ -44,18 +44,22 @@ mtchSlow = {"$match": {"time": {"$gt": 1000}}}
 mtchSort = {"$match": {"hasSortStage": {"$exists": True}}}
 #grpByShape = {"$group": {"_id": {"col": "$Object", "Op": "$Command", "filt":"$filter_shape"}, "cnt": {"$sum": 1}, \
 #                         "cost": {"$sum": "$time"}, "ratio": {"$avg": "$Ratio"},"samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
-addShape = {"$addFields": {"shape": {"$ifNull": ["$planCacheKey", "$filter_shape"]}}}
+addShape = {"$addFields": {"shape": {"$ifNull": ["$planCacheKey", "$filter_shape"]}, "sort": {"$ifNull": ["$attr.sort", "$originatingCommand.sort"]},
+                           "tms": {"$ifNull": ["$time","$durationMillis", -1]}}}
 grpByShape = {"$group": {"_id": {"col": "$Object", "plan":"$shape"}, "cnt": {"$sum": 1}, "filt": {"$addToSet": "$filter_shape"}, "Op": {"$addToSet": "$Command"},
-                         "Sort": {"$addToSet": "$attr.sort"},
+                         "Sort": {"$addToSet": "$sort"},
+                         "cost": {"$sum": "$tms"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$tms"}, "maxTime": {"$max": "$tms"},
+                         "totalRead": {"$sum": "$docsExamined"},"totalRet": {"$sum": "$nreturned"},
+                         "samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
+grpByColShape = {"$group": {"_id": {"col": "$Collection", "filt":"$shape"}, "cnt": {"$sum": 1}, "filt": {"$addToSet": "$filter_shape"}, "Op": {"$addToSet": "$Command"},
+                        "Sort": {"$addToSet": "$sort"},
                          "cost": {"$sum": "$time"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$time"}, "maxTime": {"$max": "$time"},
                          "totalRead": {"$sum": "$docsExamined"},"totalRet": {"$sum": "$nreturned"},
                          "samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
-grpByColShape = {"$group": {"_id": {"col": "$Collection", "filt":"$filter_shape"}, "cnt": {"$sum": 1}, "Op": {"$addToSet": "$Command"},
+grpBynShards = {"$group": {"_id": {"col": "$Object", "filt":"$shape"}, "cnt": {"$sum": 1}, "filt": {"$addToSet": "$filter_shape"},"Op": {"$addToSet": "$Command"},
+                         "Sort": {"$addToSet": "$sort"},
                          "cost": {"$sum": "$time"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$time"}, "maxTime": {"$max": "$time"},
                          "totalRead": {"$sum": "$docsExamined"},"totalRet": {"$sum": "$nreturned"},
-                         "samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
-grpBynShards = {"$group": {"_id": {"col": "$Object", "filt":"$filter_shape"}, "cnt": {"$sum": 1}, "Op": {"$addToSet": "$Command"},
-                         "cost": {"$sum": "$time"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$time"}, "maxTime": {"$max": "$time"},
                           "minShards": {"$min": "$nShards"}, "maxShards": {"$max": "$nShards"},
                          "samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
 excludeCntOne = {"$match": {"cnt": {"$gt": 1}}}
@@ -327,18 +331,25 @@ def writeResults(reportwriter,title,mycol,pipeline,isMongos=False):
         if "samp" in shape:
             sample = mycol.find_one({"_id": shape["samp"]})
             addFieldValue(sample,"_id",costRow)
-            if sample["Command"] == "getMore":
+            if ("Command" in sample) and (sample["Command"] == "getMore"):
                 if "originatingCommand" in sample:
                     if "filter" in sample["originatingCommand"]:
                         addFieldValue(sample["originatingCommand"],"filter",costRow)
                     elif "pipeline" in sample["originatingCommand"]:
                         addFieldValue(sample["originatingCommand"],"pipeline",costRow)
-            elif "filter" in sample["attr"]:
+            elif ("attr" in sample) and ("filter" in sample["attr"]):
                 addFieldValue(sample["attr"],"filter",costRow)
-            elif "q" in sample["attr"]:
+            elif ("attr" in sample)  and ("q" in sample["attr"]):
                 addFieldValue(sample["attr"],"q",costRow)
-            elif "pipeline" in sample["attr"]:
-                addFieldValue(sample["attr"]["pipeline"],"q",costRow)
+            elif ("attr" in sample)  and ("query" in sample["attr"]):
+                addFieldValue(sample["attr"],"query",costRow)
+            elif ("attr" in sample)  and ("pipeline" in sample["attr"]):
+                addFieldValue(sample["attr"],"pipeline",costRow)
+            elif ("attr" in sample) and ("updates" in sample["attr"]):
+                if isinstance(sample["attr"]["updates"], list):
+                    addFieldValue(sample["attr"]["updates"][0],"q",costRow)
+                else:
+                    addFieldValue(sample["attr"]["updates"],"q",costRow)
         reportwriter.writerow(costRow)
         
 def writeIndexResults(indw,colw,dbw,mycol,shardHosts,opsw=None,shards=None):
@@ -561,9 +572,10 @@ USAGE
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", help="verbose, include Informational messages")
         parser.add_argument("-m", "--multitennant", dest="multi", action="store_true", help="Combine collections is different databases")
+        parser.add_argument("-a", "--all", dest="doall", action="store_true", help="Include all queries")
         parser.add_argument("--debug", dest="debug", action="store_true", help="debug")
         parser.add_argument("--mongos", dest="mongos", action="store_true", help="Data from Mongos")
-        parser.add_argument("--infile", dest="infile", metavar="filter", help="Initial Match")
+        parser.add_argument("--infile", dest="infile", metavar="filter", help="Initial Match", nargs="+")
         parser.add_argument("--shstatus", dest="shstat", metavar="file", help="sh.status() output")
         parser.add_argument("--startdate", dest="start", metavar="Start From", help="The Start Date - format YYYY-MM-DD", type=valid_date)
         parser.add_argument("--enddate", dest="end", metavar="Start From", help="The Start Date - format YYYY-MM-DD", type=valid_date)
@@ -571,6 +583,7 @@ USAGE
         parser.add_argument("--pershard", dest="pershard", action="store_true", help="Ops Per shard")
         parser.add_argument('--outfile', '-o', dest="outFile", metavar='outFile', help="Output file")
         parser.add_argument('--top', dest="topCost", metavar='topN', help="List N most Expensive", type=int)
+        parser.add_argument('--v5', dest="is5", action="store_true", help="Version5+ logfile")
         parser.add_argument('-V', '--version', action='version', version=program_version_message)
         parser.add_argument('--URI', dest="URI", metavar='uri', help="MongoDb database URI")
         parser.add_argument('-c', '--coll', dest="coll", metavar='coll', help="Collection to import into")
@@ -590,7 +603,10 @@ USAGE
         
         matcher = {}
         if args.infile != None:
-            matcher["infile"] = args.infile
+            if len(args.infile) == 1:
+                matcher["infile"] = args.infile[0]
+            else:
+                matcher["infile"] = {"$in": args.infile}
         if (args.start != None) and (args.end != None):
             matcher["ts"] = {"$gt": args.start, "$lt": args.end}
         elif args.start != None:
@@ -601,10 +617,11 @@ USAGE
         if matcher != {}:
             mtchSlow["$match"].update(matcher)
         matchstage = {"$match": matcher}
-        print(matcher)
-        print (mtchSlow)
+        
+
         logger = myLogger("logParser",severity=logLevel)
         
+        logger.logInfo("Selection Filter: {}".format(matcher))
         if args.shstat != None:
             shards = sharding(args.shstat)
         else:
@@ -641,17 +658,18 @@ USAGE
         mycol = mydb[args.coll]
         
         # Overall Cost
-        
+        if args.is5:
+            addShape["$addFields"]["time"] =  "$durationMillis"
 
 
         if args.mongos:
-            writeResults(reportwriter,"Overall Cost",mycol,[matchstage,grpBynShards,srtByCost,lmt20],isMongos=True)
+            writeResults(reportwriter,"Overall Cost",mycol,[matchstage,addShape,grpBynShards,srtByCost,lmt20],isMongos=True)
             logger.logInfo("Done Overall")
-            writeResults(reportwriter,"Long Running",mycol,[mtchSlow,grpBynShards,srtByTime,lmt20],isMongos=True)
+            writeResults(reportwriter,"Long Running",mycol,[mtchSlow,addShape,grpBynShards,srtByTime,lmt20],isMongos=True)
             logger.logInfo("Done Long")
-            writeResults(reportwriter,"Multi Shard",mycol,[matchstage,grpBynShards,srtBynShards,lmt20],isMongos=True)
+            writeResults(reportwriter,"Multi Shard",mycol,[matchstage,addShape,grpBynShards,srtBynShards,lmt20],isMongos=True)
             logger.logInfo("Done Multi Shard")
-            writeResults(reportwriter,"Multi Shard > 1",mycol,[matchstage,grpBynShards,excludeCntOne,srtBynShards,lmt20],isMongos=True)
+            writeResults(reportwriter,"Multi Shard > 1",mycol,[matchstage,addShape,grpBynShards,excludeCntOne,srtBynShards,lmt20],isMongos=True)
             logger.logInfo("Done Multi Shard > 1")
         elif args.index:
 
@@ -672,18 +690,21 @@ USAGE
             lmtN = {"$limit": args.topCost}
             if args.multi:
                 selector = grpByColShape
-            writeResults(reportwriter,"Overall Cost",mycol,[matchstage,mtchRatio,selector,srtByCost,lmtN])
+            writeResults(reportwriter,"Overall Cost",mycol,[matchstage,mtchRatio,addShape,selector,srtByCost,lmtN])
         else:
             selector = grpByShape
+            ratioLimit = mtchRatio;
+            if args.doall:
+                ratioLimit = {"$match": {}}
             if args.multi:
                 selector = grpByColShape
-            writeResults(reportwriter,"Overall Cost",mycol,[matchstage,mtchRatio,selector,srtByCost,lmt20])
+            writeResults(reportwriter,"Overall Cost",mycol,[matchstage,ratioLimit,addShape,selector,srtByCost,lmt20])
             logger.logInfo("Done Overall")
-            writeResults(reportwriter,"Collection Scans",mycol,[matchstage,mtchColScan,selector,srtByCost,lmt20])
+            writeResults(reportwriter,"Collection Scans",mycol,[matchstage,mtchColScan,addShape,selector,srtByCost,lmt20])
             logger.logInfo("Done COLLSCAN")
-            writeResults(reportwriter,"Long Running",mycol,[mtchSlow,selector,srtByTime,lmt20])
+            writeResults(reportwriter,"Long Running",mycol,[mtchSlow,addShape,selector,srtByTime,lmt20])
             logger.logInfo("Done Long")
-            writeResults(reportwriter,"Has Sort Stage",mycol,[matchstage,mtchSort,selector,srtByCost,lmt20])
+            writeResults(reportwriter,"Has Sort Stage",mycol,[matchstage,mtchSort,addShape,selector,srtByCost,lmt20])
             logger.logInfo("Done Sort")
 
 

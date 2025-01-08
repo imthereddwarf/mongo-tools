@@ -9,6 +9,7 @@ BEGIN {
     got["count"] = 1;
     nlines = 8
     nfound = 0;
+    itemno = 0;
 }
 
 NR == 1 {
@@ -17,13 +18,14 @@ NR == 1 {
     print outFile;
 }
 
-/^2020.* NETWORK / {
+/^202[01].* NETWORK / {
     split($9,ip,":");
     key = ip[1] "-" $15 $17;
     Drivers[key]++;
 }
 
-/^2020.* COMMAND/ {
+/^202[01].* COMMAND/ {
+    if ($5 != "command" && $5 != "getmore") next;
     # Merge any split lines back together
     if (!match($NF,/^[0-9]+ms$/)) {
 	longline = $0;
@@ -41,7 +43,7 @@ NR == 1 {
     collection=$6
     if (operation != "aggregate" && operation != "getMore" &&
         operation != "findAndModify" && operation != "insert" &&
-        operation != "find" && operation != "count") next;    
+        operation != "find" && operation != "count" && operation != "update") next;    
 #    if (operation == "delete" || operation == "update") next;   #Get delete and update from WRITE
 #    if (got[$8]) {
 #	got[$8] = 0;
@@ -49,7 +51,7 @@ NR == 1 {
 #	if (nfound >= nlines) nextfile;
 #    }
 #    else next;
-    cpos = ipos = lpos = ppos = kpos = qpos = upos = prpos = npos = curpos = ocpos = spos = 0;
+    cpos = ipos = lpos = ppos = kpos = qpos = upos = prpos = npos = curpos = ocpos = spos = nypos = 0;
     for (i=7;i<NF;i++) {
 	if (substr($i,1,10) == "ninserted:") ipos = i;
 	if ($i == "planSummary:") ppos = i;
@@ -63,6 +65,7 @@ NR == 1 {
 	if (substr($i,1,13) == "keysExamined:") kpos = i;
 	if (substr($i,1,6) == "locks:") lpos = i;
 	if (substr($i,1,8) == "storage:") spos = i;
+	if (substr($i,1,10) == "numYields:") nypos = i;
     }
     curStr = "";
     storageStr="";
@@ -100,6 +103,19 @@ NR == 1 {
 	    for (i=kpos+1;i<lpos;i++) statStr = statStr "," $i;
 	}
     }
+    else if (operation == "update") {
+	if (cpos && nypos && (nypos > cpos)) {
+	    cmdStr = $(cpos+1)
+	    for (i=cpos+2;i<nypos;i++) cmdStr = cmdStr " " $i;
+	    gsub(/'/,"\"",cmdStr);
+	    gsub(/\\/,"\\\\",cmdStr);	    
+	}
+	planStr = "";
+	if (nypos && lpos && (lpos > nypos)) {
+	    statStr = $(nypos)
+	    for (i=nypos+1;i<lpos;i++) statStr = statStr "," $i;
+	}
+    }    
      else if (operation == "getMore") {
 	if (cpos && ocpos && (ocpos > cpos)) {
 	    cmdStr = $(cpos+1)
@@ -200,16 +216,18 @@ NR == 1 {
     if (operation == "findAndModify")
 	print "   Update: '" updStr "'," > outFile;
     print "   Stats: {" statStr "}," > outFile;
-    print "   " lockStr "," > outFile;
+    if (lockStr != "")        
+	print "   " lockStr "," > outFile;
     if (storageStr != "")
 	print "   " storageStr "," > outFile;
     print "   " protoStr "," > outFile;
     print "   Time: " time > outFile;
     print "}" > outFile;
+    itemno++;
     
 }
 
-/^2020.* WRITE/ {
+/^202[01].* WRITE/ {
 # Merge any split lines back together
     if (!match($NF,/^[0-9]+ms$/)) {
 	longline = $0;
@@ -231,67 +249,70 @@ NR == 1 {
 #	if (nfound >= nlines) nextfile;
 #    }
 #    else next;
-    qpos = lpos = ppos = kpos = upos = spos= 0;
+    keysfound = 0;
+    split(" ",posa);
+    split(" ",keya);
     for (i=7;i<NF;i++) {
-	if ($i == "q:") qpos = i;
-	if ($i == "query:" && qpos == 0) qpos = i;
-	if ($i == "planSummary:") ppos = i;
-	if (substr($i,1,7) == "u:" && $(i+1) == "{") upos = i;
-	if ($i == "update:" && ipos == 0) upos = i;
-	if (substr($i,1,13) == "keysExamined:") kpos = i;
-	if (substr($i,1,6) == "locks:") lpos = i;
-	if (substr($i,1,8) == "storage:") spos = i;
+	if ($i == "q:" || $i == "query:" || $i == "planSummary:" || $i == "update:") {
+	    posa[i] = $i;
+	    keya[keysfound++] = i;
+	}
+	if (substr($i,1,7) == "u:" && $(i+1) == "{") {
+	    posa[i] = "u:";
+	    keya[keysfound++] = i;
+	}
+	if (substr($i,1,13) == "keysExamined:") {
+	    posa[i] = "keysExamined:";
+	    keya[keysfound++] = i;
+	}
+	if (substr($i,1,6) == "locks:") {
+	    posa[i] = "locks:";
+	    keya[keysfound++] = i;
+	}
+	if (substr($i,1,8) == "storage:") {
+	    posa[i] = "storage:";
+	    keya[keysfound++] = i;
+	}   
     }
-    # 3.4
+    posa[NF] = "Time";
+    keya[keysfound] = NF;
+    
     storageStr = "";
-    if (upos > ppos) {
-	if (qpos && ppos && (ppos > qpos)) {
-	    queryStr = $(qpos+1)
-	    for (i=qpos+2;i<ppos;i++) queryStr = queryStr " " $i;
+
+    for (i=0;i< keysfound;i++) {
+	spos = keya[i];
+	epos = keya[i+1];
+	keyword = posa[spos];
+	if ( keyword == "query:" || keyword == "q:") {
+	    queryStr = $(spos+1)
+	    for (j=spos+2;j<epos;j++) queryStr = queryStr " " $j;
 	    gsub(/'/,"\"",queryStr);
 	    gsub(/\\/,"\\\\",queryStr);	
 	}
-    }
-    else {
-	if (qpos && upos && (upos > qpos)) {
-	    queryStr = $(qpos+1)
-	    for (i=qpos+2;i<upos;i++) queryStr = queryStr " " $i;
-	    gsub(/'/,"\"",queryStr);
-	    gsub(/\\/,"\\\\",queryStr);	
+ 	if ( keyword == "update:" || keyword == "u:") {
+	    updStr = $(spos+1)
+	    for (j=spos+2;j<epos;j++) updStr = updStr " " $j;
+	    gsub(/'/,"\"",updStr);
+	    gsub(/\\/,"\\\\",updStr);
+	    gsub(/[\000-\037\177]/,"",updStr);
 	}
-    }
-    if (operation == "update") {
-	if ( ppos && kpos && (kpos > ppos)) {
-	    planStr = $(ppos+1)
-	    for (i=ppos+2;i<upos;i++) planStr = planStr " " $i;
+ 	if ( keyword == "planSummary:" ) {
+	    planStr = $(spos+1)
+	    for (j=spos+2;j<epos;j++) planStr = planStr " " $j;
 	}
-	if ( upos && ppos && (ppos > upos)) {
-	    updStr = $(upos+1)
-	    for (i=upos+2;i<ppos;i++) updStr = updStr " " $i;
+	if (keyword == "keysExamined:") {
+	    statStr = $(spos);
+	    for (j=spos+1;j<epos;j++) statStr = statStr "," $j;
 	}
-	gsub(/'/,"\"",updStr);
-	gsub(/\\/,"\\\\",updStr);		
-    }
-    else if (operation == "remove") {
-	if (ppos && kpos && (kpos > ppos)) {
-	    planStr = $(ppos+1)
-	    for (i=ppos+2;i<kpos;i++) planStr = planStr " "$i;
+	if (keyword == "locks:") {
+	    lockStr = $(spos);
+	    for (j=spos+1;j<epos;j++) lockStr = lockStr " " $j;
 	}
-    }
-    if (kpos && lpos && (lpos > kpos)) {
-	statStr = $(kpos)
-	for (i=kpos+1;i<lpos;i++) statStr = statStr "," $i;
-    }
-    if (lpos && spos && (spos > lpos)) { #storage in 4.x
-	lockStr = $(lpos);
-	for (i=lpos+1;i<spos;i++) lockStr = lockStr " " $i;
-	storageStr = $(spos);
-	for (i=spos+1;i<NF;i++) storageStr = storageStr " " $i;
+	if (keyword == "storage:") {
+	    storageStr = $(spos);
+	    for (j=spos+1;j<epos;j++) storageStr = storageStr " " $j;
+	}
     }    
-    else if (lpos) {
-	lockStr = $(lpos)
-	for (i=lpos+1;i<NF;i++) lockStr = lockStr " " $i;
-    }
 	
     time = $NF
     sub(/ms/,"",time);
@@ -306,14 +327,16 @@ NR == 1 {
     if (operation == "update")    
 	print "   Update: '" updStr "'," > outFile;
     print "   Stats: {" statStr "}," > outFile;
-    print "   " lockStr "," > outFile;
+    if (lockStr != "")    
+	print "   " lockStr "," > outFile;
     if (storageStr != "")
 	print "   " storageStr "," > outFile;
     print "   Time: " time > outFile;
     print "}" > outFile;
+    itemno++;
 }
 
-/^2020.* I REPL / {
+/^2020.* I REPLxx / {
 # Merge any split lines back together
     if (!match($NF,/^[0-9]+ms$/)) {
 	longline = $0;
@@ -342,7 +365,7 @@ NR == 1 {
 	longline = $12;
 	longsize = substr(longline,2,length(longline)-4)*1024;
 	longOp = 1;
-	print longline, longsize;
+	print "Longline:",$1,longline, longsize;
 	for(i=9;i<NF;i++) {
 	    if ($i == "applied" && $(i+1) == "op:") {
 		start = i+3;
@@ -428,6 +451,7 @@ NR == 1 {
     }
     print "   Time: " time > outFile;
     print "}" > outFile;
+    itemno++;
 }
 
 /action.completed_coll/ {
@@ -611,7 +635,8 @@ NR == 1 {
     if (operation == "findAndModify")
 	print "   Update: '" updStr "'," > outFile;
     print "   Stats: {" statStr "}," > outFile;
-    print "   " lockStr "," > outFile;
+    if (lockStr != "")        
+	print "   " lockStr "," > outFile;
     if (storageStr != "")
 	print "   " storageStr "," > outFile;
     print "   " protoStr "," > outFile;
@@ -622,6 +647,8 @@ NR == 1 {
 
 
 END {
-    
-print "Done."
+
+    #for (connection in Drivers) 
+    #	print connection, Drivers[connection];
+    print "Done."
 }
