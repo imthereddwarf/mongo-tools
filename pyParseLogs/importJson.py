@@ -1,6 +1,8 @@
 import json, re
 import simplejson
+import datetime
 from bson import json_util
+from reformat import reformat
 
 ipport = re.compile("([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*):([0-9]*)")
 connection = re.compile("\[conn([0-9]*)\]");
@@ -9,6 +11,7 @@ filterLocations = {"update": "q", "count": "query", "find": "filter", "aggregate
                     "findAndModify": "query", "command": "q", "remove": "q"}
 
 logger = None
+formater = reformat(reformat.SHAPE)
 
 def waitTime(indoc, root, previous = None):
 
@@ -22,6 +25,27 @@ def waitTime(indoc, root, previous = None):
         return(results)
     else:
         return(previous)
+
+def gotWaiting(indoc, time, isWait, names, path):
+    keyNames = ["timeReadingMicros","timeWritingMicros","timeWaitingMicros"]
+
+    for keyName in indoc:
+        if keyName in keyNames:
+            if isinstance(indoc[keyName],dict):
+                for lockName in indoc[keyName]:
+                    isWait = True    
+                    time += indoc[keyName][lockName]
+                    names.append(path+"."+lockName+"."+keyName)
+            else:
+                isWait = True    
+                time += indoc[keyName]
+                names.append(path+"."+keyName)
+        elif isinstance(indoc[keyName],dict):
+            nIsWait,nTime,nNames = gotWaiting(indoc[keyName],time, isWait, names, path+"."+keyName)
+            if nIsWait:
+                isWait = True
+                time += nTime
+    return(isWait,time, names)
 
 
 
@@ -113,6 +137,9 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
             header["OS"] = tok["attr"]
         elif tok["msg"] == "Options set by command line":
             header["CmdLine"] = tok["attr"]
+        else:
+            outDoc["msg"] = tok["msg"]
+            return(outDoc)
         return None
     elif tok["c"] == "-" or tok["c"] == "ACCESS":
         outDoc["connection"]  = tok["ctx"]
@@ -171,15 +198,15 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
 
 
         if attr["type"] == "command":
-            cmdType,obj = list(attr["command"].items())[0]
-            if cmdType == 'getMore':
-                cursor = obj
-                outDoc['Object'] = attr["ns"].split(".")[1]
-            else:
-                outDoc["Object"] = obj
-            outDoc["Command"] = cmdType
             cmdData = attr["command"]
             if isinstance(cmdData,dict):
+                cmdType,obj = list(cmdData.items())[0]
+                if cmdType == 'getMore':
+                    cursor = obj
+                    outDoc['Object'] = attr["ns"].split(".")[1]
+                else:
+                    outDoc["Object"] = obj
+                outDoc["Command"] = cmdType
                 if cmdType in filterLocations:
                     fltTree = filterLocations[cmdType].split(".")
                     filter = cmdData
@@ -193,7 +220,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         if isinstance(filter, list) and len(filter) > 0:
                             filter = filter[0]
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
                     #del parent[key]
                 outDoc["attr"] = cmdData
             else:
@@ -221,7 +248,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         if isinstance(filter, list):
                             filter = filter[0]
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
                     #del parent[key]
                 outDoc["attr"] = cmdData
             else:
@@ -245,7 +272,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         if isinstance(filter, list):
                             filter = filter[0]
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
                     #del parent[key]
                 outDoc["attr"] = cmdData
             else:
@@ -269,7 +296,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         if isinstance(filter, list):
                             filter = filter[0]
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
                     #del parent[key]
                 outDoc["attr"] = cmdData
             else:
@@ -277,15 +304,23 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
         else:
             outDoc["Command"] = attr["type"]
             if "ns" in attr:
-                outDoc["Object"] = attr["ns"].split(".")[1]
+                dbcol = attr["ns"].split(".")
+                if len(dbcol) > 1:
+                    outDoc["Object"] = dbcol[1]
 
         for key in attr:
             if (key != "type") & (key != "command"):
                 outDoc[key] = attr[key]
+                
+        if "truncated" in tok:
+            outDoc["truncated"] = tok["truncated"]
+            
+        if "size" in tok:
+            outDoc["size"] = tok["size"]
 
         if ("filter_shape" not in outDoc) and ("originatingCommand" in outDoc):
             if ("Command" in outDoc) and (outDoc["Command"] == "getMore") and ("filter" in outDoc["originatingCommand"]):
-                outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(outDoc["originatingCommand"]["filter"])
+                outDoc["filter_shape"],outDoc["filter_params"] = formater.process(outDoc["originatingCommand"]["filter"])
             elif ("Command" in outDoc) and (outDoc["Command"] == "getMore") and ("pipeline" in outDoc["originatingCommand"]):
                 aggPipe = outDoc["originatingCommand"]["pipeline"]
                 if isinstance(aggPipe,list):
@@ -299,7 +334,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         else:
                             break
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = fmtQuery(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
         
         
             
@@ -349,93 +384,3 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
             outDoc["startTS"] = outDoc["ts"] - datetime.timedelta(milliseconds=outDoc["durationMillis"])
     return outDoc
 
-def fmtArray(array):
-    arrayShape = "[ "
-    scalar = 0;
-    parameters = []
-    for element in array:
-        if isinstance(element,dict):
-            if not arrayShape == "[ ":
-                arrayShape += ",";
-            arrParam = []
-            docTxt,subParams = fmtQuery(element)
-            arrayShape += docTxt
-            for subPar in subParams:
-                parameters.append(subPar)
-        elif isinstance(element,list):  # Nested Array 
-            if not arrayShape == "[ ":
-                arrayShape += ",";
-            docTxt,subParams = fmtArray(element)
-            arrayShape += docTxt
-            for subPar in subParams:
-                parameters.append(subPar)
-        else:
-            parameters.append(element)
-            scalar += 1             
-
-    if scalar > 0: 
-        if not arrayShape == "[ ":
-            arrayShape += ","
-        if scalar == 1:
-            arrayShape += "1"
-        else:
-            arrayShape += "N"
-    arrayShape += " ]"
-    return arrayShape,parameters
-
-def fmtQuery(input):
-    #print(input)
-    parameters = []
-    if not isinstance(input,dict):
-        return input, parameters
-    else:
-        filter = input
-    if isinstance(filter,list):  # aggregation pipeline
-        if "_$match" in filter[0]:
-            filter = filter[0]["_$match"]
-        else:
-            return input,parameters
-    queryShape = "{"
-    for key in filter:
-        if key[0:2] == "_$":
-            fltKey = key[1:]
-        else:
-            fltKey = key
-        if not queryShape == "{": 
-            queryShape += ","
-        if key.lower() == "$nin":
-            hasNIN= True
-        if key.lower() == "$ne":
-            hasNE= True
-        value = filter[key]
-        valtxt = None
-        if isinstance(value,dict) :
-            docTxt,subParams = fmtQuery(value)
-            valtxt = fltKey + ": " + docTxt
-            for subPar in subParams:
-                parameters.append(subPar)
-
-                  
-        elif isinstance(value,list):
-            docTxt,subParams = fmtArray(value)
-            valtxt = fltKey + ": " + docTxt
-            for subPar in subParams:
-                parameters.append(subPar)
-        elif isinstance(value,str):
-            if value.startswith("new"):
-                if value.startswith("newDate"):
-                    epoch = int(value[8:-4])
-                    try:
-                        dateval = datetime.datetime.fromtimestamp(epoch,pytz.utc)
-                    except ValueError as e:
-                        dateval = datetime.datetime(9999,12,31,23,59,59)
-                    parameters.append(dateval)
-            else:
-                parameters.append(value);
-            valtxt = fltKey+": 1";
-        else:
-            parameters.append(value);
-            valtxt = fltKey+": 1";
-        queryShape += valtxt
-    queryShape = queryShape + "}"
-    return queryShape,parameters
