@@ -76,7 +76,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
     if "end" in timeRange and d > timeRange["end"]:
         return True    #nothing more to process here
     
-    outDoc = { "type": tok["c"], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName}
+    outDoc = { "type": tok["c"], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName, "id": tok["id"], "severity": ["s"]}
     if nodeType != None:
         outDoc["nodeType"] = nodeType
     if "hostname" in header:
@@ -203,7 +203,10 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                 cmdType,obj = list(cmdData.items())[0]
                 if cmdType == 'getMore':
                     cursor = obj
-                    outDoc['Object'] = attr["ns"].split(".")[1]
+                    if "collection" in cmdData:
+                        outDoc['Object'] = cmdData["collection"]
+                    else:
+                        outDoc['Object'] = attr["ns"].split(".")[1]
                 else:
                     outDoc["Object"] = obj
                 outDoc["Command"] = cmdType

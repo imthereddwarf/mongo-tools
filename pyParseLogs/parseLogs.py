@@ -16,6 +16,7 @@ It defines classes_and_methods
 '''
 
 import pymongo
+import gzip
 from bson import json_util
 from bson.objectid import ObjectId
 from decimal import Decimal
@@ -31,6 +32,7 @@ import traceback
 import pytz
 from platform import _ver_stages
 import importJson
+import importAudit
 from myLogger import myLogger
 import importText
 
@@ -82,7 +84,9 @@ def fixDollar(indoc):
     return newdoc
 
 
-    
+def is_gz_file(filepath):
+ with open(filepath, 'rb') as test_f:
+     return test_f.read(2) == b'\x1f\x8b' 
 
 
 def valid_date(s):
@@ -182,6 +186,7 @@ USAGE
         
         textentry = re.compile("^[0-9]{4,4}-[0-9]{2,2}-[0-9]{2,2}T")
         jsonentry = re.compile("^{\"t\":{\"\$date\"\:")
+        auditentry = re.compile("^{ \"atype\"")
         
         namePat = None 
         if (args.namePat != None) and ("(" in args.namePat):
@@ -201,7 +206,10 @@ USAGE
             fileEncoding = "ISO-8859-1" 
             if args.utfEncoding:
                 fileEncoding= "utf-8"
-            f = open(inpath, "r",encoding = fileEncoding)
+            if is_gz_file(inpath):
+                f = gzip.open(inpath,"r")
+            else:
+                f = open(inpath, "r",encoding = fileEncoding)
             nodeType = None
             if namePat == None:
                 shortName = os.path.basename(inpath)
@@ -219,13 +227,21 @@ USAGE
             headers = {"isNew": False}
             
             #Readahead  the first line
-            lineBuffer = f.readline().rstrip()  
+            newline = f.readline().rstrip() 
+            if isinstance(newline,bytes):
+                lineBuffer = newline.decode(fileEncoding)
+            else:
+                lineBuffer = newline
             linecount = 0
             lastentry = None
             reportwrapfail = True
             ret = None
             #loop reading next line, current is in x
-            for newline in f:
+            for inbuffer in f:
+              if isinstance(inbuffer,bytes):
+                  newline = inbuffer.decode(fileEncoding)
+              else:
+                  newline = inbuffer
               linecount += 1
               if (linecount % 10000) == 0:
                   if lastentry != None:
@@ -243,7 +259,7 @@ USAGE
                           logger.logInfo("No wrapper match using {} for {}".format(args.wrapper,newline))
                   else:
                       newline = nameMatch.group(1)
-              if textentry.match(newline) or jsonentry.match(newline):
+              if textentry.match(newline) or jsonentry.match(newline) or auditentry.match(newline):
                   if textentry.match(lineBuffer):
                       try:
                           importText.logger = logger
@@ -294,10 +310,32 @@ USAGE
     
                               print(docBuf)
                           docBuf[:] = []
+                  elif auditentry.match(lineBuffer):
+                      importAudit.logger = logger
+                      ret = importAudit.process(lineBuffer,inpath,linecount,shortName,procrange,headers,nodeType)
+                      if ret != None:
+                          if ret == True:
+                              break
+                          lastentry = ret["ts"]
+                          if headers["isNew"]:
+                              docBuf.append(fixDollar(headers))
+                              headers["isNew"] = False
+                          docBuf.append(fixDollar(ret))
+                      if len(docBuf) >= 1000:
+                          try:
+                              mycol.insert_many(docBuf,ordered=False)
+                          except Exception as err:
+                              print(err)
+    
+                              print(docBuf)
+                          docBuf[:] = []
                   lineBuffer = newline
               else:
                   # multi line log entry append 
-                  lineBuffer += newline
+                  if isinstance(newline,bytes):
+                      lineBufer += newline.decode(fileEncoding)
+                  else:
+                      lineBuffer += newline
             #Process the last line
             try:
                 if ret != True:
