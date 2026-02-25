@@ -43,22 +43,26 @@ mtchColScan = {"$match": {"planSummary": "COLLSCAN"}}
 mtchSlow = {"$match": {"time": {"$gt": 1000}}}
 mtchSort = {"$match": {"hasSortStage": {"$exists": True}}}
 #grpByShape = {"$group": {"_id": {"col": "$Object", "Op": "$Command", "filt":"$filter_shape"}, "cnt": {"$sum": 1}, \
-#                         "cost": {"$sum": "$time"}, "ratio": {"$avg": "$Ratio"},"samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
-addShape = {"$addFields": {"shape": {"$ifNull": ["$planCacheKey", "$filter_shape"]}, "sort": {"$ifNull": ["$attr.sort", "$originatingCommand.sort"]},
+#                         "cost": {"$sum": "date"}, "ratio": {"$avg": "$Ratio"},"samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
+addShape = {"$addFields": {"shape": {"$ifNull": ["$queryHash", "$filter_shape"]}, 
+                           "sort": {"$ifNull": ["$attr.sort", "$originatingCommand.sort"]},
+                           "limit": {"$ifNull": ["$attr.limit", "$originatingCommand.limit"]},
+                           "colName": {'$cond': {'if': {'$eq': ["$Command", "getMore"]}, 'then': "$attr.collection", "else": "$Object"}},
                            "tms": {"$ifNull": ["$time","$durationMillis", -1]}}}
-grpByShape = {"$group": {"_id": {"col": "$Object", "plan":"$shape"}, "cnt": {"$sum": 1}, "filt": {"$addToSet": "$filter_shape"}, "Op": {"$addToSet": "$Command"},
+grpByShape = {"$group": {"_id": {"col": "$colName", "plan":"$shape"}, "cnt": {"$sum": 1}, "filt": {"$addToSet": "$filter_shape"}, "Op": {"$addToSet": "$Command"},
                          "Sort": {"$addToSet": "$sort"},
+                         "Limit": {"$max": "$limit"},
                          "cost": {"$sum": "$tms"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$tms"}, "maxTime": {"$max": "$tms"},
                          "totalRead": {"$sum": "$docsExamined"},"totalRet": {"$sum": "$nreturned"},
                          "samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
-grpByColShape = {"$group": {"_id": {"col": "$Collection", "filt":"$shape"}, "cnt": {"$sum": 1}, "filt": {"$addToSet": "$filter_shape"}, "Op": {"$addToSet": "$Command"},
+grpByColShape = {"$group": {"_id": {"col": "$colName", "filt":"$shape"}, "cnt": {"$sum": 1}, "filt": {"$addToSet": "$filter_shape"}, "Op": {"$addToSet": "$Command"},
                         "Sort": {"$addToSet": "$sort"},
-                         "cost": {"$sum": "$time"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$time"}, "maxTime": {"$max": "$time"},
+                         "cost": {"$sum": "$tms"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$tms"}, "maxTime": {"$max": "$tms"},
                          "totalRead": {"$sum": "$docsExamined"},"totalRet": {"$sum": "$nreturned"},
                          "samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
 grpBynShards = {"$group": {"_id": {"col": "$Object", "filt":"$shape"}, "cnt": {"$sum": 1}, "filt": {"$addToSet": "$filter_shape"},"Op": {"$addToSet": "$Command"},
                          "Sort": {"$addToSet": "$sort"},
-                         "cost": {"$sum": "$time"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$time"}, "maxTime": {"$max": "$time"},
+                         "cost": {"$sum": "$tms"}, "ratio": {"$avg": "$Ratio"}, "minTime": {"$min": "$tms"}, "maxTime": {"$max": "$tms"},
                          "totalRead": {"$sum": "$docsExamined"},"totalRet": {"$sum": "$nreturned"},
                           "minShards": {"$min": "$nShards"}, "maxShards": {"$max": "$nShards"},
                          "samp": {"$first": "$_id"}, "plan": {"$addToSet": "$planSummary"}}}
@@ -306,17 +310,19 @@ def writeResults(reportwriter,title,mycol,pipeline,isMongos=False):
     reportwriter.writerow([title])
     reportwriter.writerow(["="*len(title)])
     if isMongos:
-        headers = ["Collection","Operation","Filter","Sort","Count","Cost","Avg Ratio","min Time","max Time","tot Read","tot Ret","min Shards","max shards","Plan(s)","Sample ID","Sample Filter"]
+        headers = ["Hash","Collection","Operation","Filter","Sort","Limit","Count","Cost","Avg Ratio","min Time","max Time","tot Read","tot Ret","min Shards","max shards","Plan(s)","Sample ID","Sample Filter"]
     else:
-        headers = ["Collection","Operation","Filter","Sort","Count","Cost","Avg Ratio","min Time","max Time","tot Read","tot Ret","Plan(s)","Sample ID","Sample Filter"]
+        headers = ["Hash","Collection","Operation","Filter","Sort","Limit","Count","Cost","Avg Ratio","min Time","max Time","tot Read","tot Ret","Plan(s)","Sample ID","Sample Filter"]
     reportwriter.writerow(headers)
     cursor = mycol.aggregate(pipeline,allowDiskUse=True)
     for shape in  cursor:
         costRow = []
+        addFieldValue(shape["_id"],"plan",costRow)
         addFieldValue(shape["_id"],"col",costRow)
         addFieldValue(shape,"Op",costRow)
         addFieldValue(shape,"filt",costRow)
         addFieldValue(shape,"Sort",costRow)
+        addFieldValue(shape,"Limit",costRow)
         addFieldValue(shape,"cnt",costRow,default=0)
         addFieldValue(shape,"cost",costRow,default=0)
         addFieldValue(shape,"ratio",costRow,default=1)
