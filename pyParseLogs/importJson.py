@@ -2,6 +2,7 @@ import json, re
 import simplejson
 import datetime
 from bson import json_util
+from bson import Decimal128
 from reformat import reformat
 
 ipport = re.compile("([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*):([0-9]*)")
@@ -76,7 +77,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
     if "end" in timeRange and d > timeRange["end"]:
         return True    #nothing more to process here
     
-    outDoc = { "type": tok["c"], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName, "id": tok["id"], "severity": ["s"]}
+    outDoc = { "type": tok["c"], "ts": d, "infile": inpath, "lineno": linecount, "shortName": shortName, "id": tok["id"], "severity": "s"}
     if nodeType != None:
         outDoc["nodeType"] = nodeType
     if "hostname" in header:
@@ -109,7 +110,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
             if "attr" in tok:
                 outDoc["Details"] = tok["attr"]
                 if outDoc["Details"]['msgLen'] > 9223372036854775807:
-                    outDoc["Details"]['msgLen'] = Decimal128(Decimal(tok['attr']['msgLen']))
+                    outDoc["Details"]['msgLen'] = Decimal128(str(tok['attr']['msgLen']))
             return(outDoc)
         else:
             outDoc["thread"] = tok["ctx"] 

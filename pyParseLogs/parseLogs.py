@@ -33,6 +33,7 @@ import pytz
 from platform import _ver_stages
 import importJson
 import importAudit
+import importMongot
 from myLogger import myLogger
 import importText
 
@@ -143,6 +144,7 @@ USAGE
         parser.add_argument('--URI', dest="URI", metavar='uri', help="MongoDb database URI")
         parser.add_argument('-c', '--coll', dest="coll", metavar='coll', help="Collection to import into")
         parser.add_argument('--namePattern', dest="namePat", metavar='pattern', help="Regex to match the short name")
+        parser.add_argument('--nodeType', dest="nodeType", metavar='type', help="mongod or mongos")
         parser.add_argument('--wrapper', dest="wrapper", metavar='wrapper', help="Regex to strip any wrapper")
         parser.add_argument(dest="paths", help="paths to folder(s) with source file(s) [default: %(default)s]", metavar="path", nargs='+')
 
@@ -187,6 +189,7 @@ USAGE
         textentry = re.compile("^[0-9]{4,4}-[0-9]{2,2}-[0-9]{2,2}T")
         jsonentry = re.compile("^{\"t\":{\"\$date\"\:")
         auditentry = re.compile("^{ \"atype\"")
+        mongotentry = re.compile("^{\"t\":\"[0-9]{4,4}-[0-9]{2,2}-[0-9]{2,2}T.*MONGOT")
         
         namePat = None 
         if (args.namePat != None) and ("(" in args.namePat):
@@ -211,6 +214,10 @@ USAGE
             else:
                 f = open(inpath, "r",encoding = fileEncoding)
             nodeType = None
+            if args.nodeType != None:
+                nodeType = args.nodeType
+            elif "mongos" in inpath:
+                nodeType = "mongos"
             if namePat == None:
                 shortName = os.path.basename(inpath)
             else:
@@ -259,7 +266,8 @@ USAGE
                           logger.logInfo("No wrapper match using {} for {}".format(args.wrapper,newline))
                   else:
                       newline = nameMatch.group(1)
-              if textentry.match(newline) or jsonentry.match(newline) or auditentry.match(newline):
+              if textentry.match(newline) or jsonentry.match(newline) or \
+                 auditentry.match(newline) or mongotentry.match(newline):
                   if textentry.match(lineBuffer):
                       try:
                           importText.logger = logger
@@ -329,6 +337,26 @@ USAGE
     
                               print(docBuf)
                           docBuf[:] = []
+                  elif mongotentry.match(lineBuffer):
+                      importMongot.logger = logger
+                      ret = importMongot.process(lineBuffer,inpath,linecount,shortName,procrange,headers,nodeType)
+                      if ret != None:
+                          if ret == True:
+                              break
+                          lastentry = ret["ts"]
+                          if headers["isNew"]:
+                              docBuf.append(fixDollar(headers))
+                              headers["isNew"] = False
+                          docBuf.append(fixDollar(ret))
+                      if len(docBuf) >= 1000:
+                          try:
+                              mycol.insert_many(docBuf,ordered=False)
+                          except Exception as err:
+                              print(err)
+    
+                              print(docBuf)
+                          docBuf[:] = []
+                      
                   lineBuffer = newline
               else:
                   # multi line log entry append 
