@@ -1,5 +1,7 @@
 class reformat:
     
+# Reduce filter to it's shape, tokenize or redact
+
     SHAPE = 1
     TOKENIZE = 2
     REDACT = 3
