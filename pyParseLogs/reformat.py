@@ -14,11 +14,11 @@ class reformat:
        
     def process(self,input):
         if self.mode == self.SHAPE:
-            return self.fmtQuery(input)
+            return self.fmtQuery(input,[])
         else:
             return {}
         
-    def fmtArray(self,array):
+    def fmtArray(self,array,operators):
         arrayShape = "[ "
         scalar = 0;
         parameters = []
@@ -27,14 +27,14 @@ class reformat:
                 if not arrayShape == "[ ":
                     arrayShape += ",";
                 arrParam = []
-                docTxt,subParams = self.fmtQuery(element)
+                docTxt,subParams,operators = self.fmtQuery(element,operators)
                 arrayShape += docTxt
                 for subPar in subParams:
                     parameters.append(subPar)
             elif isinstance(element,list):  # Nested Array 
                 if not arrayShape == "[ ":
                     arrayShape += ",";
-                docTxt,subParams = self.fmtArray(element)
+                docTxt,subParams,operators = self.fmtArray(element,operators)
                 arrayShape += docTxt
                 for subPar in subParams:
                     parameters.append(subPar)
@@ -50,9 +50,9 @@ class reformat:
             else:
                 arrayShape += "N"
         arrayShape += " ]"
-        return arrayShape,parameters
+        return arrayShape,parameters,operators
     
-    def fmtQuery(self,input):
+    def fmtQuery(self,input,operators):
         #print(input)
         parameters = []
         if not isinstance(input,dict):
@@ -72,21 +72,23 @@ class reformat:
                 fltKey = key
             if not queryShape == "{": 
                 queryShape += ","
-            if key.lower() == "$nin":
+            if fltKey.lower() == "$nin":
                 hasNIN= True
-            if key.lower() == "$ne":
+            if fltKey.lower() == "$ne":
                 hasNE= True
+            if fltKey[0:1] == "$" and fltKey not in operators:
+                operators.append(fltKey)  
             value = filter[key]
             valtxt = None
             if isinstance(value,dict) :
-                docTxt,subParams = self.fmtQuery(value)
+                docTxt,subParams,operators = self.fmtQuery(value,operators)
                 valtxt = fltKey + ": " + docTxt
                 for subPar in subParams:
                     parameters.append(subPar)
     
                       
             elif isinstance(value,list):
-                docTxt,subParams = self.fmtArray(value)
+                docTxt,subParams,operators = self.fmtArray(value,operators)
                 valtxt = fltKey + ": " + docTxt
                 for subPar in subParams:
                     parameters.append(subPar)
@@ -107,4 +109,4 @@ class reformat:
                 valtxt = fltKey+": 1";
             queryShape += valtxt
         queryShape = queryShape + "}"
-        return queryShape,parameters
+        return queryShape,parameters,operators

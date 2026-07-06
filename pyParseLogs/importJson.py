@@ -224,7 +224,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         if isinstance(filter, list) and len(filter) > 0:
                             filter = filter[0]
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"],outDoc["operators"] = formater.process(filter)
                     #del parent[key]
                 outDoc["attr"] = cmdData
             else:
@@ -252,7 +252,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         if isinstance(filter, list):
                             filter = filter[0]
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"],outDoc["operators"] = formater.process(filter)
                     #del parent[key]
                 outDoc["attr"] = cmdData
             else:
@@ -276,7 +276,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         if isinstance(filter, list):
                             filter = filter[0]
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"],outDoc["operators"] = formater.process(filter)
                     #del parent[key]
                 outDoc["attr"] = cmdData
             else:
@@ -300,7 +300,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         if isinstance(filter, list):
                             filter = filter[0]
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"],outDoc["operators"] = formater.process(filter)
                     #del parent[key]
                 outDoc["attr"] = cmdData
             else:
@@ -324,7 +324,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
 
         if ("filter_shape" not in outDoc) and ("originatingCommand" in outDoc):
             if ("Command" in outDoc) and (outDoc["Command"] == "getMore") and ("filter" in outDoc["originatingCommand"]):
-                outDoc["filter_shape"],outDoc["filter_params"] = formater.process(outDoc["originatingCommand"]["filter"])
+                outDoc["filter_shape"],outDoc["filter_params"],outDoc["operators"] = formater.process(outDoc["originatingCommand"]["filter"])
             elif ("Command" in outDoc) and (outDoc["Command"] == "getMore") and ("pipeline" in outDoc["originatingCommand"]):
                 aggPipe = outDoc["originatingCommand"]["pipeline"]
                 if isinstance(aggPipe,list):
@@ -338,7 +338,7 @@ def process(x,inpath,linecount,shortName,timeRange,header,nodeType):
                         else:
                             break
                     if filter != None:
-                        outDoc["filter_shape"],outDoc["filter_params"] = formater.process(filter)
+                        outDoc["filter_shape"],outDoc["filter_params"],outDoc["operators"] = formater.process(filter)
         
         
             
